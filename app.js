@@ -2,8 +2,13 @@
 
 
 /* =========================================================
-   ELEMENTS
-========================================================= */
+   ADOFAI WEB PLAYER
+   ========================================================= */
+
+
+/* =========================================================
+   DOM
+   ========================================================= */
 
 const fileInput =
     document.getElementById("fileInput");
@@ -14,8 +19,23 @@ const dropZone =
 const uploadScreen =
     document.getElementById("uploadScreen");
 
+const levelSelectScreen =
+    document.getElementById("levelSelectScreen");
+
 const playerScreen =
     document.getElementById("playerScreen");
+
+const levelList =
+    document.getElementById("levelList");
+
+const loadSelectedButton =
+    document.getElementById("loadSelectedButton");
+
+const backToUploadButton =
+    document.getElementById("backToUploadButton");
+
+const newLevelButton =
+    document.getElementById("newLevelButton");
 
 const levelName =
     document.getElementById("levelName");
@@ -29,14 +49,38 @@ const tileLabel =
 const offsetLabel =
     document.getElementById("offsetLabel");
 
+const audioLabel =
+    document.getElementById("audioLabel");
+
 const statusDot =
     document.getElementById("statusDot");
 
 const statusText =
     document.getElementById("statusText");
 
-const newLevelButton =
-    document.getElementById("newLevelButton");
+const canvas =
+    document.getElementById("gameCanvas");
+
+const ctx =
+    canvas.getContext("2d");
+
+const gameContainer =
+    document.getElementById("gameContainer");
+
+const gameMessage =
+    document.getElementById("gameMessage");
+
+const flashOverlay =
+    document.getElementById("flashOverlay");
+
+const beatCircle =
+    document.getElementById("beatCircle");
+
+const currentTile =
+    document.getElementById("currentTile");
+
+const currentTime =
+    document.getElementById("currentTime");
 
 const playButton =
     document.getElementById("playButton");
@@ -47,8 +91,8 @@ const pauseButton =
 const restartButton =
     document.getElementById("restartButton");
 
-const timeline =
-    document.getElementById("timeline");
+const timelineSlider =
+    document.getElementById("timelineSlider");
 
 const timeCurrent =
     document.getElementById("timeCurrent");
@@ -56,35 +100,30 @@ const timeCurrent =
 const timeTotal =
     document.getElementById("timeTotal");
 
-const currentTile =
-    document.getElementById("currentTile");
-
-const currentTime =
-    document.getElementById("currentTime");
-
 const speedSlider =
     document.getElementById("speedSlider");
 
 const speedValue =
     document.getElementById("speedValue");
 
-const beatCircle =
-    document.getElementById("beatCircle");
-
-const canvas =
-    document.getElementById("gameCanvas");
-
-const ctx =
-    canvas.getContext("2d");
-
 
 /* =========================================================
    STATE
-========================================================= */
+   ========================================================= */
 
 let level = null;
 
 let tiles = [];
+
+let actions = [];
+
+let decorations = [];
+
+let availableLevels = [];
+
+let zipFiles = {};
+
+let selectedLevelIndex = 0;
 
 let bpm = 100;
 
@@ -106,24 +145,46 @@ let lastAnimationTime = 0;
 
 let lastBeatIndex = -1;
 
+let audioUrl = null;
+
+let backgroundImage = null;
+
+let backgroundImageUrl = null;
+
+
+/* =========================================================
+   AUDIO
+   ========================================================= */
+
+const audio =
+    new Audio();
+
+audio.preload = "auto";
+
 
 /* =========================================================
    FILE INPUT
-========================================================= */
+   ========================================================= */
 
 fileInput.addEventListener(
     "change",
-    event => {
+    async event => {
 
         const file =
             event.target.files[0];
 
-        if (file) {
-            loadFile(file);
+        if (!file) {
+            return;
         }
+
+        await loadFile(file);
     }
 );
 
+
+/* =========================================================
+   DRAG & DROP
+   ========================================================= */
 
 dropZone.addEventListener(
     "dragover",
@@ -131,7 +192,9 @@ dropZone.addEventListener(
 
         event.preventDefault();
 
-        dropZone.classList.add("dragging");
+        dropZone.classList.add(
+            "dragging"
+        );
     }
 );
 
@@ -140,78 +203,102 @@ dropZone.addEventListener(
     "dragleave",
     () => {
 
-        dropZone.classList.remove("dragging");
+        dropZone.classList.remove(
+            "dragging"
+        );
     }
 );
 
 
 dropZone.addEventListener(
     "drop",
-    event => {
+    async event => {
 
         event.preventDefault();
 
-        dropZone.classList.remove("dragging");
+        dropZone.classList.remove(
+            "dragging"
+        );
 
         const file =
             event.dataTransfer.files[0];
 
-        if (file) {
-            loadFile(file);
+        if (!file) {
+            return;
         }
+
+        await loadFile(file);
     }
 );
 
 
 /* =========================================================
    LOAD FILE
-========================================================= */
+   ========================================================= */
 
 async function loadFile(file) {
 
-    if (
-        !file.name
-            .toLowerCase()
-            .endsWith(".adofai")
-    ) {
-
-        alert(
-            "Please select an .adofai file."
-        );
-
-        return;
-    }
-
-
     try {
 
-        statusText.textContent =
-            "Loading...";
-
-
-        const text =
-            await file.text();
-
-
-        const data =
-            JSON.parse(text);
-
-
-        parseLevel(
-            data,
-            file.name
+        setStatus(
+            "Loading...",
+            false
         );
 
+
+        if (
+            file.name
+                .toLowerCase()
+                .endsWith(".adofai")
+        ) {
+
+            const text =
+                await file.text();
+
+            const data =
+                parseADOFAI(text);
+
+            zipFiles = {};
+
+            availableLevels = [];
+
+            await prepareLevel(
+                data,
+                file.name,
+                null
+            );
+
+            return;
+        }
+
+
+        if (
+            file.name
+                .toLowerCase()
+                .endsWith(".zip")
+        ) {
+
+            await loadZip(file);
+
+            return;
+        }
+
+
+        throw new Error(
+            "Please choose an .adofai or .zip file."
+        );
 
     } catch (error) {
 
         console.error(error);
 
-        statusText.textContent =
-            "Error";
+        setStatus(
+            "Error",
+            false
+        );
 
         alert(
-            "Could not read this ADOFAI file.\n\n" +
+            "Could not load the level:\n\n" +
             error.message
         );
     }
@@ -219,18 +306,315 @@ async function loadFile(file) {
 
 
 /* =========================================================
-   PARSE LEVEL
-========================================================= */
+   PARSE ADOFAI
+   ========================================================= */
 
-function parseLevel(data, filename) {
+function parseADOFAI(text) {
+
+    /*
+        Some ADOFAI files can contain a BOM.
+    */
+
+    text =
+        text.replace(
+            /^\uFEFF/,
+            ""
+        );
+
+
+    try {
+
+        return JSON.parse(text);
+
+    } catch (error) {
+
+        /*
+            Try removing trailing commas.
+        */
+
+        const cleaned =
+            text
+                .replace(
+                    /,\s*([}\]])/g,
+                    "$1"
+                );
+
+
+        return JSON.parse(cleaned);
+    }
+}
+
+
+/* =========================================================
+   LOAD ZIP
+   ========================================================= */
+
+async function loadZip(file) {
 
     if (
-        !data ||
-        typeof data !== "object"
+        typeof JSZip ===
+        "undefined"
     ) {
 
         throw new Error(
-            "Invalid ADOFAI data."
+            "JSZip did not load."
+        );
+    }
+
+
+    const zip =
+        await JSZip.loadAsync(file);
+
+
+    zipFiles = {};
+
+
+    for (
+        const entry of
+        Object.values(zip.files)
+    ) {
+
+        if (entry.dir) {
+            continue;
+        }
+
+
+        zipFiles[entry.name] =
+            await entry.async("blob");
+    }
+
+
+    const levelFiles =
+        Object.keys(zipFiles)
+            .filter(
+                filename =>
+                    filename
+                        .toLowerCase()
+                        .endsWith(".adofai")
+            );
+
+
+    if (!levelFiles.length) {
+
+        throw new Error(
+            "No .adofai files were found inside this ZIP."
+        );
+    }
+
+
+    availableLevels = [];
+
+
+    for (
+        const filename of
+        levelFiles
+    ) {
+
+        try {
+
+            const text =
+                await zipFiles[
+                    filename
+                ].text();
+
+
+            const data =
+                parseADOFAI(text);
+
+
+            const settings =
+                data.settings || {};
+
+
+            availableLevels.push({
+
+                filename,
+
+                data,
+
+                name:
+                    settings.song ||
+                    settings.levelDesc ||
+                    getFilename(filename)
+
+            });
+
+        } catch (error) {
+
+            console.warn(
+                "Could not parse:",
+                filename,
+                error
+            );
+        }
+    }
+
+
+    if (
+        availableLevels.length === 1
+    ) {
+
+        await prepareLevel(
+
+            availableLevels[0].data,
+
+            availableLevels[0].filename,
+
+            zipFiles
+
+        );
+
+    } else {
+
+        showLevelSelector();
+    }
+}
+
+
+/* =========================================================
+   LEVEL SELECTOR
+   ========================================================= */
+
+function showLevelSelector() {
+
+    uploadScreen.classList.add(
+        "hidden"
+    );
+
+    playerScreen.classList.add(
+        "hidden"
+    );
+
+    levelSelectScreen.classList.remove(
+        "hidden"
+    );
+
+
+    selectedLevelIndex = 0;
+
+
+    renderLevelList();
+}
+
+
+function renderLevelList() {
+
+    levelList.innerHTML = "";
+
+
+    availableLevels.forEach(
+        (entry, index) => {
+
+            const option =
+                document.createElement(
+                    "div"
+                );
+
+
+            option.className =
+                "level-option";
+
+
+            if (
+                index ===
+                selectedLevelIndex
+            ) {
+
+                option.classList.add(
+                    "selected"
+                );
+            }
+
+
+            option.innerHTML = `
+
+                <div class="level-radio"></div>
+
+                <div>
+
+                    <div class="level-option-title">
+                        ${escapeHtml(entry.name)}
+                    </div>
+
+                    <div class="level-option-file">
+                        ${escapeHtml(entry.filename)}
+                    </div>
+
+                </div>
+
+            `;
+
+
+            option.addEventListener(
+                "click",
+                () => {
+
+                    selectedLevelIndex =
+                        index;
+
+                    renderLevelList();
+                }
+            );
+
+
+            levelList.appendChild(
+                option
+            );
+        }
+    );
+}
+
+
+loadSelectedButton.addEventListener(
+    "click",
+    async () => {
+
+        const entry =
+            availableLevels[
+                selectedLevelIndex
+            ];
+
+
+        if (!entry) {
+            return;
+        }
+
+
+        try {
+
+            await prepareLevel(
+                entry.data,
+                entry.filename,
+                zipFiles
+            );
+
+        } catch (error) {
+
+            console.error(error);
+
+            alert(
+                "Could not load this level:\n\n" +
+                error.message
+            );
+        }
+    }
+);
+
+
+/* =========================================================
+   PREPARE LEVEL
+   ========================================================= */
+
+async function prepareLevel(
+    data,
+    filename,
+    assets
+) {
+
+    if (!data) {
+
+        throw new Error(
+            "The ADOFAI file is empty."
         );
     }
 
@@ -240,6 +624,18 @@ function parseLevel(data, filename) {
 
     const settings =
         data.settings || {};
+
+
+    actions =
+        Array.isArray(data.actions)
+            ? data.actions
+            : [];
+
+
+    decorations =
+        Array.isArray(data.decorations)
+            ? data.decorations
+            : [];
 
 
     /*
@@ -260,7 +656,7 @@ function parseLevel(data, filename) {
 
 
     /*
-        OFFSET
+        Offset
     */
 
     offset =
@@ -276,73 +672,127 @@ function parseLevel(data, filename) {
 
 
     /*
-        ANGLE DATA
+        Angle data
     */
 
-    const angleData =
+    let angleData =
         Array.isArray(data.angleData)
-            ? data.angleData
-            : [];
+            ? data.angleData.slice()
+            : null;
 
 
-    if (!angleData.length) {
+    /*
+        Some older levels use pathData.
+    */
+
+    if (
+        !angleData &&
+        typeof data.pathData ===
+        "string"
+    ) {
+
+        angleData =
+            pathDataToAngles(
+                data.pathData
+            );
+    }
+
+
+    if (
+        !angleData ||
+        !angleData.length
+    ) {
 
         throw new Error(
-            "This level has no angleData."
+            "This level does not contain usable angleData or pathData."
         );
     }
 
 
     /*
-        Build path
+        Build the track.
     */
 
     tiles =
-        buildTilePath(
+        buildTrack(
             angleData
         );
 
 
     /*
-        Timing
+        Timing.
     */
 
     calculateTiming();
 
 
     /*
-        Name
+        Audio.
     */
 
-    let name =
-        settings.song ||
-        settings.levelDesc ||
-        removeExtension(filename);
+    stopAudio();
 
 
-    if (!name) {
-        name = "Untitled Level";
+    if (assets) {
+
+        const audioFile =
+            findAudio(
+                data,
+                filename,
+                assets
+            );
+
+
+        if (audioFile) {
+
+            await loadAudio(
+                assets[audioFile],
+                audioFile
+            );
+
+        } else {
+
+            audioLabel.textContent =
+                "Audio: none";
+        }
+
+
+        await loadBackground(
+            data,
+            filename,
+            assets
+        );
     }
 
 
+    /*
+        Level name.
+    */
+
     levelName.textContent =
-        name;
+        settings.song ||
+        settings.levelDesc ||
+        getFilename(filename);
 
 
     bpmLabel.textContent =
-        `BPM: ${formatNumber(bpm)}`;
+        "BPM: " +
+        formatNumber(bpm);
 
 
     tileLabel.textContent =
-        `Tiles: ${tiles.length}`;
+        "Tiles: " +
+        tiles.length;
 
 
     offsetLabel.textContent =
-        `Offset: ${formatNumber(offset)} ms`;
+        "Offset: " +
+        formatNumber(offset) +
+        " ms";
 
 
     /*
-        Reset
+        Reset.
     */
 
     currentTimeSeconds = 0;
@@ -354,14 +804,24 @@ function parseLevel(data, filename) {
     lastBeatIndex = -1;
 
 
-    resizeCanvas();
-
+    /*
+        UI.
+    */
 
     uploadScreen.classList.add(
         "hidden"
     );
 
+    levelSelectScreen.classList.add(
+        "hidden"
+    );
+
     playerScreen.classList.remove(
+        "hidden"
+    );
+
+
+    gameMessage.classList.add(
         "hidden"
     );
 
@@ -374,6 +834,8 @@ function parseLevel(data, filename) {
         "Level loaded";
 
 
+    resizeCanvas();
+
     updateUI();
 
     draw();
@@ -381,18 +843,94 @@ function parseLevel(data, filename) {
 
 
 /* =========================================================
-   BUILD TILE PATH
-========================================================= */
+   PATH DATA
+   ========================================================= */
 
-function buildTilePath(angleData) {
+function pathDataToAngles(path) {
+
+    /*
+        Common ADOFAI pathData mapping.
+
+        This is primarily for older levels.
+    */
+
+    const table = {
+
+        R: 0,
+
+        p: 15,
+
+        J: 30,
+
+        E: 45,
+
+        T: 60,
+
+        o: 75,
+
+        G: 90,
+
+        Q: 105,
+
+        H: 120,
+
+        W: 135,
+
+        x: 150,
+
+        N: 165,
+
+        F: 180,
+
+        "<": 195,
+
+        L: 210,
+
+        "]": 225,
+
+        v: 240,
+
+        Z: 255,
+
+        U: 270,
+
+        D: 285,
+
+        "7": 300,
+
+        "8": 315,
+
+        "9": 330,
+
+        "0": 345
+    };
+
+
+    return [...path]
+        .map(
+            char =>
+                table[char] ??
+                0
+        );
+}
+
+
+/* =========================================================
+   BUILD TRACK
+   ========================================================= */
+
+function buildTrack(
+    angleData
+) {
 
     const result = [];
+
 
     let x = 0;
 
     let y = 0;
 
-    const distance = 1;
+    let previousDirection = 0;
 
 
     for (
@@ -401,38 +939,57 @@ function buildTilePath(angleData) {
         i++
     ) {
 
-        let angle =
-            Number(angleData[i]);
+        let direction =
+            Number(
+                angleData[i]
+            );
 
+
+        /*
+            999 represents a midspin.
+        */
 
         if (
-            !Number.isFinite(angle)
+            direction === 999
         ) {
 
-            angle = 0;
+            direction =
+                previousDirection + 180;
         }
 
 
-        angle =
-            normalizeAngle(angle);
+        if (
+            !Number.isFinite(direction)
+        ) {
 
+            direction = 0;
+        }
+
+
+        direction =
+            normalizeAngle(
+                direction
+            );
+
+
+        /*
+            The first tile is the origin.
+        */
 
         if (i > 0) {
 
             const radians =
-                angle *
+                direction *
                 Math.PI /
                 180;
 
 
             x +=
-                Math.cos(radians) *
-                distance;
+                Math.cos(radians);
 
 
-            y -=
-                Math.sin(radians) *
-                distance;
+            y +=
+                Math.sin(radians);
         }
 
 
@@ -440,20 +997,23 @@ function buildTilePath(angleData) {
 
             index: i,
 
-            angle,
+            direction,
 
             x,
 
             y,
 
             time: 0
-
         });
+
+
+        previousDirection =
+            direction;
     }
 
 
     /*
-        Center path
+        Center.
     */
 
     if (result.length) {
@@ -467,7 +1027,9 @@ function buildTilePath(angleData) {
         let maxY = -Infinity;
 
 
-        for (const tile of result) {
+        for (
+            const tile of result
+        ) {
 
             minX =
                 Math.min(
@@ -503,7 +1065,9 @@ function buildTilePath(angleData) {
             (minY + maxY) / 2;
 
 
-        for (const tile of result) {
+        for (
+            const tile of result
+        ) {
 
             tile.x -= centerX;
 
@@ -518,7 +1082,7 @@ function buildTilePath(angleData) {
 
 /* =========================================================
    TIMING
-========================================================= */
+   ========================================================= */
 
 function calculateTiming() {
 
@@ -529,10 +1093,6 @@ function calculateTiming() {
         return;
     }
 
-
-    /*
-        Seconds per beat
-    */
 
     const beatDuration =
         60 / bpm;
@@ -545,481 +1105,436 @@ function calculateTiming() {
     ) {
 
         tiles[i].time =
-            i * beatDuration;
+            i *
+            beatDuration;
     }
 
 
     totalDuration =
-        tiles.length *
-        beatDuration;
+        Math.max(
+            0,
+            tiles.length *
+            beatDuration
+        );
 }
 
 
 /* =========================================================
-   CANVAS RESIZE
-========================================================= */
+   AUDIO SEARCH
+   ========================================================= */
 
-function resizeCanvas() {
+function findAudio(
+    data,
+    levelFilename,
+    assets
+) {
 
-    const rect =
-        canvas.getBoundingClientRect();
+    const settings =
+        data.settings || {};
 
 
-    const dpr =
-        window.devicePixelRatio || 1;
+    const requested =
+        settings.songFilename ||
+        settings.songFile ||
+        settings.musicFilename ||
+        "";
 
 
-    canvas.width =
-        Math.floor(
-            rect.width * dpr
+    const names =
+        Object.keys(assets);
+
+
+    /*
+        Exact reference.
+    */
+
+    if (requested) {
+
+        const exact =
+            names.find(
+                name =>
+                    normalizePath(name) ===
+                    normalizePath(requested)
+            );
+
+
+        if (exact) {
+            return exact;
+        }
+
+
+        const requestedBase =
+            getFilename(
+                requested
+            ).toLowerCase();
+
+
+        const baseMatch =
+            names.find(
+                name =>
+                    getFilename(name)
+                        .toLowerCase() ===
+                    requestedBase
+            );
+
+
+        if (baseMatch) {
+            return baseMatch;
+        }
+    }
+
+
+    /*
+        Find all audio.
+    */
+
+    const audioFiles =
+        names.filter(
+            isAudioFile
         );
 
 
-    canvas.height =
-        Math.floor(
-            rect.height * dpr
+    if (!audioFiles.length) {
+        return null;
+    }
+
+
+    /*
+        Same folder.
+    */
+
+    const folder =
+        getFolder(
+            levelFilename
         );
 
 
-    ctx.setTransform(
-        dpr,
-        0,
-        0,
-        dpr,
-        0,
-        0
-    );
+    const sameFolder =
+        audioFiles.find(
+            name =>
+                getFolder(name) ===
+                folder
+        );
 
 
-    draw();
+    if (sameFolder) {
+        return sameFolder;
+    }
+
+
+    /*
+        Match level name.
+    */
+
+    const levelBase =
+        getFilename(
+            levelFilename
+        )
+        .replace(
+            /\.adofai$/i,
+            ""
+        )
+        .toLowerCase();
+
+
+    const matching =
+        audioFiles.find(
+            name => {
+
+                const audioBase =
+                    getFilename(name)
+                        .replace(
+                            /\.[^.]+$/,
+                            ""
+                        )
+                        .toLowerCase();
+
+
+                return (
+                    audioBase ===
+                    levelBase
+                );
+            }
+        );
+
+
+    if (matching) {
+        return matching;
+    }
+
+
+    return audioFiles[0];
 }
 
 
-window.addEventListener(
-    "resize",
-    resizeCanvas
-);
-
-
 /* =========================================================
-   DRAW
-========================================================= */
+   LOAD AUDIO
+   ========================================================= */
 
-function draw() {
+async function loadAudio(
+    blob,
+    filename
+) {
 
-    const width =
-        canvas.clientWidth;
-
-    const height =
-        canvas.clientHeight;
-
-
-    ctx.clearRect(
-        0,
-        0,
-        width,
-        height
-    );
-
-
-    if (!tiles.length) {
+    if (!blob) {
         return;
     }
 
 
-    drawGrid(
-        width,
-        height
+    if (audioUrl) {
+
+        URL.revokeObjectURL(
+            audioUrl
+        );
+    }
+
+
+    audioUrl =
+        URL.createObjectURL(
+            blob
+        );
+
+
+    audio.pause();
+
+    audio.src =
+        audioUrl;
+
+    audio.currentTime =
+        0;
+
+    audio.playbackRate =
+        playbackSpeed;
+
+    audio.load();
+
+
+    audioLabel.textContent =
+        "Audio: " +
+        getFilename(filename);
+
+
+    await new Promise(
+        resolve => {
+
+            if (
+                audio.readyState >= 1
+            ) {
+
+                resolve();
+
+                return;
+            }
+
+
+            const done =
+                () => {
+
+                    audio.removeEventListener(
+                        "loadedmetadata",
+                        done
+                    );
+
+                    resolve();
+                };
+
+
+            audio.addEventListener(
+                "loadedmetadata",
+                done
+            );
+
+
+            setTimeout(
+                resolve,
+                3000
+            );
+        }
     );
 
 
-    /*
-        Find bounds
-    */
-
-    let minX = Infinity;
-
-    let maxX = -Infinity;
-
-    let minY = Infinity;
-
-    let maxY = -Infinity;
-
-
-    for (const tile of tiles) {
-
-        minX =
-            Math.min(
-                minX,
-                tile.x
-            );
-
-        maxX =
-            Math.max(
-                maxX,
-                tile.x
-            );
-
-        minY =
-            Math.min(
-                minY,
-                tile.y
-            );
-
-        maxY =
-            Math.max(
-                maxY,
-                tile.y
-            );
-    }
-
-
-    const pathWidth =
-        Math.max(
-            maxX - minX,
-            1
-        );
-
-
-    const pathHeight =
-        Math.max(
-            maxY - minY,
-            1
-        );
-
-
-    const padding = 70;
-
-
-    const scale =
-        Math.min(
-            (width - padding * 2) /
-                pathWidth,
-
-            (height - padding * 2) /
-                pathHeight
-        );
-
-
-    const centerX =
-        width / 2;
-
-
-    const centerY =
-        height / 2;
-
-
-    /*
-        Convert game coordinates
-        to canvas coordinates.
-    */
-
-    function screenX(x) {
-
-        return centerX +
-            x * scale;
-    }
-
-
-    function screenY(y) {
-
-        return centerY +
-            y * scale;
-    }
-
-
-    /*
-        Path
-    */
-
-    ctx.beginPath();
-
-
-    for (
-        let i = 0;
-        i < tiles.length;
-        i++
+    if (
+        Number.isFinite(
+            audio.duration
+        ) &&
+        audio.duration > 0
     ) {
 
-        const tile =
-            tiles[i];
-
-
-        const sx =
-            screenX(tile.x);
-
-
-        const sy =
-            screenY(tile.y);
-
-
-        if (i === 0) {
-
-            ctx.moveTo(
-                sx,
-                sy
+        totalDuration =
+            Math.max(
+                totalDuration,
+                audio.duration
             );
-
-        } else {
-
-            ctx.lineTo(
-                sx,
-                sy
-            );
-        }
-    }
-
-
-    ctx.strokeStyle =
-        "rgba(255,255,255,.12)";
-
-    ctx.lineWidth = 2;
-
-    ctx.stroke();
-
-
-    /*
-        Tiles
-    */
-
-    for (
-        let i = 0;
-        i < tiles.length;
-        i++
-    ) {
-
-        const tile =
-            tiles[i];
-
-
-        const sx =
-            screenX(tile.x);
-
-
-        const sy =
-            screenY(tile.y);
-
-
-        const isCurrent =
-            i === currentTileIndex;
-
-
-        const isPassed =
-            i < currentTileIndex;
-
-
-        /*
-            Glow for current tile
-        */
-
-        if (isCurrent) {
-
-            ctx.beginPath();
-
-            ctx.arc(
-                sx,
-                sy,
-                17,
-                0,
-                Math.PI * 2
-            );
-
-            ctx.fillStyle =
-                "rgba(255,255,255,.12)";
-
-            ctx.fill();
-        }
-
-
-        /*
-            Tile
-        */
-
-        ctx.beginPath();
-
-        ctx.arc(
-            sx,
-            sy,
-            isCurrent ? 8 : 5,
-            0,
-            Math.PI * 2
-        );
-
-
-        if (isCurrent) {
-
-            ctx.fillStyle =
-                "white";
-
-        } else if (isPassed) {
-
-            ctx.fillStyle =
-                "rgba(255,255,255,.45)";
-
-        } else {
-
-            ctx.fillStyle =
-                "rgba(255,255,255,.75)";
-        }
-
-
-        ctx.fill();
-
-
-        /*
-            Tile number
-        */
-
-        if (
-            tiles.length <= 300
-        ) {
-
-            ctx.font =
-                "9px system-ui";
-
-            ctx.textAlign =
-                "center";
-
-            ctx.fillStyle =
-                "rgba(255,255,255,.35)";
-
-            ctx.fillText(
-                String(i),
-                sx,
-                sy - 11
-            );
-        }
-    }
-
-
-    /*
-        Player position
-    */
-
-    if (tiles.length) {
-
-        const tile =
-            tiles[currentTileIndex];
-
-
-        if (tile) {
-
-            const sx =
-                screenX(tile.x);
-
-            const sy =
-                screenY(tile.y);
-
-
-            /*
-                Outer pulse
-            */
-
-            const pulse =
-                13 +
-                Math.sin(
-                    performance.now() /
-                    120
-                ) * 3;
-
-
-            ctx.beginPath();
-
-            ctx.arc(
-                sx,
-                sy,
-                pulse,
-                0,
-                Math.PI * 2
-            );
-
-            ctx.strokeStyle =
-                "rgba(255,255,255,.55)";
-
-            ctx.lineWidth = 1.5;
-
-            ctx.stroke();
-        }
     }
 }
 
 
 /* =========================================================
-   GRID
-========================================================= */
+   BACKGROUND IMAGE
+   ========================================================= */
 
-function drawGrid(
-    width,
-    height
+async function loadBackground(
+    data,
+    levelFilename,
+    assets
 ) {
 
-    const gridSize = 40;
+    backgroundImage = null;
 
 
-    ctx.save();
+    if (backgroundImageUrl) {
 
-
-    ctx.strokeStyle =
-        "rgba(255,255,255,.025)";
-
-    ctx.lineWidth = 1;
-
-
-    for (
-        let x = 0;
-        x <= width;
-        x += gridSize
-    ) {
-
-        ctx.beginPath();
-
-        ctx.moveTo(
-            x,
-            0
+        URL.revokeObjectURL(
+            backgroundImageUrl
         );
 
-        ctx.lineTo(
-            x,
-            height
-        );
-
-        ctx.stroke();
+        backgroundImageUrl = null;
     }
 
 
+    const settings =
+        data.settings || {};
+
+
+    const possibleNames = [
+
+        settings.bgImage,
+
+        settings.backgroundImage,
+
+        settings.background,
+
+        settings.bg,
+
+        settings.customBackground
+
+    ]
+        .filter(Boolean);
+
+
+    const names =
+        Object.keys(assets);
+
+
+    let selected =
+        null;
+
+
+    /*
+        Look for exact references.
+    */
+
     for (
-        let y = 0;
-        y <= height;
-        y += gridSize
+        const requested of
+        possibleNames
     ) {
 
-        ctx.beginPath();
+        const match =
+            names.find(
+                name =>
+                    normalizePath(name) ===
+                    normalizePath(requested)
+            );
 
-        ctx.moveTo(
-            0,
-            y
-        );
 
-        ctx.lineTo(
-            width,
-            y
-        );
+        if (match) {
 
-        ctx.stroke();
+            selected = match;
+
+            break;
+        }
+
+
+        const base =
+            getFilename(
+                requested
+            ).toLowerCase();
+
+
+        const baseMatch =
+            names.find(
+                name =>
+                    getFilename(name)
+                        .toLowerCase() ===
+                    base
+            );
+
+
+        if (baseMatch) {
+
+            selected =
+                baseMatch;
+
+            break;
+        }
     }
 
 
-    ctx.restore();
+    /*
+        If no explicit background was found,
+        look for common background images.
+    */
+
+    if (!selected) {
+
+        selected =
+            names.find(
+                name =>
+                    isImageFile(name) &&
+                    (
+                        name
+                            .toLowerCase()
+                            .includes("background") ||
+
+                        name
+                            .toLowerCase()
+                            .includes("bg")
+                    )
+            );
+    }
+
+
+    if (!selected) {
+        return;
+    }
+
+
+    backgroundImageUrl =
+        URL.createObjectURL(
+            assets[selected]
+        );
+
+
+    const image =
+        new Image();
+
+
+    image.onload =
+        () => {
+
+            backgroundImage =
+                image;
+
+            draw();
+        };
+
+
+    image.src =
+        backgroundImageUrl;
 }
 
 
 /* =========================================================
    PLAY
-========================================================= */
+   ========================================================= */
 
-function play() {
+async function play() {
 
-    if (!level || !tiles.length) {
+    if (
+        !level ||
+        !tiles.length
+    ) {
+
         return;
     }
 
@@ -1034,11 +1549,34 @@ function play() {
         totalDuration
     ) {
 
-        currentTimeSeconds = 0;
+        restart();
     }
 
 
     playing = true;
+
+
+    if (audio.src) {
+
+        try {
+
+            audio.currentTime =
+                currentTimeSeconds;
+
+            audio.playbackRate =
+                playbackSpeed;
+
+            await audio.play();
+
+        } catch (error) {
+
+            console.warn(
+                "Audio playback:",
+                error
+            );
+        }
+    }
+
 
     lastAnimationTime =
         performance.now();
@@ -1048,16 +1586,21 @@ function play() {
         requestAnimationFrame(
             animationLoop
         );
+
+
+    updateUI();
 }
 
 
 /* =========================================================
    PAUSE
-========================================================= */
+   ========================================================= */
 
 function pause() {
 
     playing = false;
+
+    audio.pause();
 
 
     if (animationFrame) {
@@ -1076,7 +1619,7 @@ function pause() {
 
 /* =========================================================
    RESTART
-========================================================= */
+   ========================================================= */
 
 function restart() {
 
@@ -1090,6 +1633,9 @@ function restart() {
     lastBeatIndex = -1;
 
 
+    audio.currentTime = 0;
+
+
     updateUI();
 
     draw();
@@ -1098,7 +1644,7 @@ function restart() {
 
 /* =========================================================
    ANIMATION LOOP
-========================================================= */
+   ========================================================= */
 
 function animationLoop(now) {
 
@@ -1107,21 +1653,39 @@ function animationLoop(now) {
     }
 
 
-    const delta =
-        (now - lastAnimationTime) /
-        1000;
-
-
-    lastAnimationTime = now;
-
-
-    currentTimeSeconds +=
-        delta * playbackSpeed;
-
-
     /*
-        Finished
+        Use the audio clock whenever possible.
     */
+
+    if (
+        audio.src &&
+        !audio.paused &&
+        Number.isFinite(
+            audio.currentTime
+        )
+    ) {
+
+        currentTimeSeconds =
+            audio.currentTime;
+
+    } else {
+
+        const delta =
+            (
+                now -
+                lastAnimationTime
+            ) / 1000;
+
+
+        lastAnimationTime =
+            now;
+
+
+        currentTimeSeconds +=
+            delta *
+            playbackSpeed;
+    }
+
 
     if (
         currentTimeSeconds >=
@@ -1131,9 +1695,11 @@ function animationLoop(now) {
         currentTimeSeconds =
             totalDuration;
 
-        updateCurrentTile();
-
         playing = false;
+
+        audio.pause();
+
+        updateCurrentTile();
 
         updateUI();
 
@@ -1146,6 +1712,8 @@ function animationLoop(now) {
     updateCurrentTile();
 
     updateBeat();
+
+    updateActions();
 
     updateUI();
 
@@ -1161,7 +1729,7 @@ function animationLoop(now) {
 
 /* =========================================================
    CURRENT TILE
-========================================================= */
+   ========================================================= */
 
 function updateCurrentTile() {
 
@@ -1203,7 +1771,7 @@ function updateCurrentTile() {
 
 /* =========================================================
    BEAT
-========================================================= */
+   ========================================================= */
 
 function updateBeat() {
 
@@ -1219,54 +1787,150 @@ function updateBeat() {
 
 
     if (
-        beatIndex !==
+        beatIndex ===
         lastBeatIndex
     ) {
 
-        lastBeatIndex =
-            beatIndex;
+        return;
+    }
 
 
-        beatCircle.classList.remove(
-            "beat"
-        );
+    lastBeatIndex =
+        beatIndex;
 
 
-        /*
-            Force animation restart.
-        */
-
-        void beatCircle.offsetWidth;
+    beatCircle.classList.remove(
+        "beat"
+    );
 
 
-        beatCircle.classList.add(
-            "beat"
-        );
+    void beatCircle.offsetWidth;
 
 
-        setTimeout(() => {
+    beatCircle.classList.add(
+        "beat"
+    );
+
+
+    setTimeout(
+        () => {
 
             beatCircle.classList.remove(
                 "beat"
             );
 
-        }, 100);
+        },
+        100
+    );
+}
+
+
+/* =========================================================
+   ACTIONS
+   ========================================================= */
+
+function updateActions() {
+
+    /*
+        Basic Flash support.
+
+        Actions can be stored as objects or
+        strings depending on the level version.
+    */
+
+    for (
+        const action of actions
+    ) {
+
+        if (!action) {
+            continue;
+        }
+
+
+        const type =
+            action.eventType ||
+            action.type;
+
+
+        if (
+            type !== "Flash"
+        ) {
+
+            continue;
+        }
+
+
+        const floor =
+            Number(
+                action.floor
+            );
+
+
+        if (
+            floor !==
+            currentTileIndex
+        ) {
+
+            continue;
+        }
+
+
+        const color =
+            action.color ||
+            "ffffff";
+
+
+        flashOverlay.style.background =
+            "#" +
+            String(color)
+                .replace("#", "");
+
+
+        flashOverlay.style.opacity =
+            (
+                Number(
+                    action.opacity ??
+                    100
+                ) / 100
+            ).toString();
+
+
+        setTimeout(
+            () => {
+
+                flashOverlay.style.opacity =
+                    "0";
+
+            },
+            Math.max(
+                30,
+                Number(
+                    action.duration ||
+                    .15
+                ) * 1000
+            )
+        );
     }
 }
 
 
 /* =========================================================
    UI
-========================================================= */
+   ========================================================= */
 
 function updateUI() {
 
     currentTile.textContent =
-        `Tile ${currentTileIndex + 1} / ${tiles.length}`;
+        "Tile " +
+        (
+            currentTileIndex + 1
+        ) +
+        " / " +
+        tiles.length;
 
 
     currentTime.textContent =
-        formatTimeDetailed(
+        formatDetailedTime(
             currentTimeSeconds
         );
 
@@ -1283,9 +1947,11 @@ function updateUI() {
         );
 
 
-    if (totalDuration > 0) {
+    if (
+        totalDuration > 0
+    ) {
 
-        timeline.value =
+        timelineSlider.value =
             (
                 currentTimeSeconds /
                 totalDuration
@@ -1293,39 +1959,53 @@ function updateUI() {
 
     } else {
 
-        timeline.value = 0;
+        timelineSlider.value = 0;
     }
 
 
-    playButton.innerHTML =
-        playing
-            ? "▶ <span>Playing</span>"
-            : "▶ <span>Play</span>";
+    if (playing) {
+
+        playButton.innerHTML =
+            "▶ <span>Playing</span>";
+
+    } else {
+
+        playButton.innerHTML =
+            "▶ <span>Play</span>";
+    }
 }
 
 
 /* =========================================================
    TIMELINE
-========================================================= */
+   ========================================================= */
 
-timeline.addEventListener(
+timelineSlider.addEventListener(
     "input",
     () => {
 
-        if (!totalDuration) {
+        if (
+            totalDuration <= 0
+        ) {
+
             return;
         }
 
 
-        const percentage =
-            Number(
-                timeline.value
-            ) / 100;
-
-
         currentTimeSeconds =
-            percentage *
+            (
+                Number(
+                    timelineSlider.value
+                ) / 100
+            ) *
             totalDuration;
+
+
+        if (audio.src) {
+
+            audio.currentTime =
+                currentTimeSeconds;
+        }
 
 
         updateCurrentTile();
@@ -1339,7 +2019,7 @@ timeline.addEventListener(
 
 /* =========================================================
    SPEED
-========================================================= */
+   ========================================================= */
 
 speedSlider.addEventListener(
     "input",
@@ -1354,13 +2034,17 @@ speedSlider.addEventListener(
         speedValue.textContent =
             playbackSpeed.toFixed(2) +
             "×";
+
+
+        audio.playbackRate =
+            playbackSpeed;
     }
 );
 
 
 /* =========================================================
    BUTTONS
-========================================================= */
+   ========================================================= */
 
 playButton.addEventListener(
     "click",
@@ -1380,14 +2064,73 @@ restartButton.addEventListener(
 );
 
 
+/* =========================================================
+   LOAD ANOTHER
+   ========================================================= */
+
 newLevelButton.addEventListener(
     "click",
     () => {
 
         pause();
 
+        stopAudio();
+
+
+        level = null;
+
+        tiles = [];
+
+        actions = [];
+
+        decorations = [];
+
+        zipFiles = {};
+
+        availableLevels = [];
+
 
         playerScreen.classList.add(
+            "hidden"
+        );
+
+        levelSelectScreen.classList.add(
+            "hidden"
+        );
+
+        uploadScreen.classList.remove(
+            "hidden"
+        );
+
+
+        gameMessage.classList.remove(
+            "hidden"
+        );
+
+
+        statusDot.classList.remove(
+            "ready"
+        );
+
+
+        statusText.textContent =
+            "Ready";
+
+
+        fileInput.value = "";
+    }
+);
+
+
+/* =========================================================
+   BACK
+   ========================================================= */
+
+backToUploadButton.addEventListener(
+    "click",
+    () => {
+
+        levelSelectScreen.classList.add(
             "hidden"
         );
 
@@ -1397,31 +2140,17 @@ newLevelButton.addEventListener(
 
 
         fileInput.value = "";
-
-
-        statusDot.classList.remove(
-            "ready"
-        );
-
-
-        statusText.textContent =
-            "No level loaded";
     }
 );
 
 
 /* =========================================================
    KEYBOARD
-========================================================= */
+   ========================================================= */
 
 document.addEventListener(
     "keydown",
     event => {
-
-        /*
-            Don't activate keyboard shortcuts
-            while typing.
-        */
 
         if (
             event.target.tagName ===
@@ -1463,15 +2192,1165 @@ document.addEventListener(
 
 
 /* =========================================================
-   HELPERS
-========================================================= */
+   CANVAS
+   ========================================================= */
 
-function normalizeAngle(angle) {
+function resizeCanvas() {
+
+    const rect =
+        canvas.getBoundingClientRect();
+
+
+    const dpr =
+        window.devicePixelRatio ||
+        1;
+
+
+    canvas.width =
+        Math.floor(
+            rect.width *
+            dpr
+        );
+
+
+    canvas.height =
+        Math.floor(
+            rect.height *
+            dpr
+        );
+
+
+    ctx.setTransform(
+        dpr,
+        0,
+        0,
+        dpr,
+        0,
+        0
+    );
+
+
+    draw();
+}
+
+
+window.addEventListener(
+    "resize",
+    resizeCanvas
+);
+
+
+/* =========================================================
+   DRAW
+   ========================================================= */
+
+function draw() {
+
+    const width =
+        canvas.clientWidth;
+
+    const height =
+        canvas.clientHeight;
+
+
+    ctx.clearRect(
+        0,
+        0,
+        width,
+        height
+    );
+
+
+    /*
+        Background.
+    */
+
+    drawBackground(
+        width,
+        height
+    );
+
+
+    if (!tiles.length) {
+        return;
+    }
+
+
+    /*
+        Calculate bounds.
+    */
+
+    let minX = Infinity;
+
+    let maxX = -Infinity;
+
+    let minY = Infinity;
+
+    let maxY = -Infinity;
+
+
+    for (
+        const tile of tiles
+    ) {
+
+        minX =
+            Math.min(
+                minX,
+                tile.x
+            );
+
+        maxX =
+            Math.max(
+                maxX,
+                tile.x
+            );
+
+        minY =
+            Math.min(
+                minY,
+                tile.y
+            );
+
+        maxY =
+            Math.max(
+                maxY,
+                tile.y
+            );
+    }
+
+
+    const pathWidth =
+        Math.max(
+            1,
+            maxX - minX
+        );
+
+
+    const pathHeight =
+        Math.max(
+            1,
+            maxY - minY
+        );
+
+
+    const padding = 80;
+
+
+    const scale =
+        Math.min(
+
+            (
+                width -
+                padding * 2
+            ) /
+            pathWidth,
+
+            (
+                height -
+                padding * 2
+            ) /
+            pathHeight,
+
+            55
+
+        );
+
+
+    const centerX =
+        width / 2;
+
+
+    const centerY =
+        height / 2;
+
+
+    function sx(x) {
+
+        return (
+            centerX +
+            x * scale
+        );
+    }
+
+
+    function sy(y) {
+
+        return (
+            centerY -
+            y * scale
+        );
+    }
+
+
+    /*
+        Track colors.
+    */
+
+    const settings =
+        level.settings || {};
+
+
+    const trackColor =
+        getHexColor(
+            settings.trackColor,
+            "#ffffff"
+        );
+
+
+    const trackColor2 =
+        getHexColor(
+            settings.secondaryTrackColor,
+            "#72d8ff"
+        );
+
+
+    /*
+        Draw connecting path.
+    */
+
+    for (
+        let i = 1;
+        i < tiles.length;
+        i++
+    ) {
+
+        const previous =
+            tiles[i - 1];
+
+        const tile =
+            tiles[i];
+
+
+        const progress =
+            i /
+            Math.max(
+                1,
+                tiles.length - 1
+            );
+
+
+        const color =
+            mixColors(
+                trackColor,
+                trackColor2,
+                progress
+            );
+
+
+        ctx.beginPath();
+
+
+        ctx.moveTo(
+            sx(previous.x),
+            sy(previous.y)
+        );
+
+
+        ctx.lineTo(
+            sx(tile.x),
+            sy(tile.y)
+        );
+
+
+        ctx.strokeStyle =
+            color;
+
+
+        ctx.globalAlpha =
+            .20;
+
+
+        ctx.lineWidth =
+            Math.max(
+                5,
+                scale * .23
+            );
+
+
+        ctx.lineCap =
+            "round";
+
+
+        ctx.stroke();
+
+
+        ctx.globalAlpha =
+            1;
+    }
+
+
+    /*
+        Draw tiles.
+    */
+
+    for (
+        let i = 0;
+        i < tiles.length;
+        i++
+    ) {
+
+        const tile =
+            tiles[i];
+
+
+        const x =
+            sx(tile.x);
+
+
+        const y =
+            sy(tile.y);
+
+
+        const isCurrent =
+            i ===
+            currentTileIndex;
+
+
+        const passed =
+            i <
+            currentTileIndex;
+
+
+        const progress =
+            i /
+            Math.max(
+                1,
+                tiles.length - 1
+            );
+
+
+        const color =
+            mixColors(
+                trackColor,
+                trackColor2,
+                progress
+            );
+
+
+        /*
+            Glow.
+        */
+
+        if (isCurrent) {
+
+            ctx.beginPath();
+
+            ctx.arc(
+                x,
+                y,
+                28,
+                0,
+                Math.PI * 2
+            );
+
+
+            const glow =
+                ctx.createRadialGradient(
+                    x,
+                    y,
+                    0,
+                    x,
+                    y,
+                    30
+                );
+
+
+            glow.addColorStop(
+                0,
+                color
+            );
+
+
+            glow.addColorStop(
+                1,
+                "transparent"
+            );
+
+
+            ctx.fillStyle =
+                glow;
+
+
+            ctx.globalAlpha =
+                .65;
+
+
+            ctx.fill();
+
+            ctx.globalAlpha =
+                1;
+        }
+
+
+        /*
+            Tile body.
+        */
+
+        ctx.beginPath();
+
+
+        ctx.arc(
+            x,
+            y,
+            isCurrent
+                ? 9
+                : 6,
+            0,
+            Math.PI * 2
+        );
+
+
+        if (passed) {
+
+            ctx.fillStyle =
+                "rgba(255,255,255,.28)";
+
+        } else {
+
+            ctx.fillStyle =
+                color;
+        }
+
+
+        ctx.fill();
+
+
+        /*
+            Tile ring.
+        */
+
+        ctx.beginPath();
+
+
+        ctx.arc(
+            x,
+            y,
+            isCurrent
+                ? 13
+                : 8,
+            0,
+            Math.PI * 2
+        );
+
+
+        ctx.strokeStyle =
+            color;
+
+
+        ctx.globalAlpha =
+            isCurrent
+                ? 1
+                : .45;
+
+
+        ctx.lineWidth =
+            isCurrent
+                ? 2
+                : 1;
+
+
+        ctx.stroke();
+
+
+        ctx.globalAlpha =
+            1;
+
+
+        /*
+            Tile number.
+        */
+
+        if (
+            tiles.length <= 300
+        ) {
+
+            ctx.font =
+                "9px system-ui";
+
+
+            ctx.textAlign =
+                "center";
+
+
+            ctx.fillStyle =
+                "rgba(255,255,255,.35)";
+
+
+            ctx.fillText(
+                String(i + 1),
+                x,
+                y - 14
+            );
+        }
+    }
+
+
+    /*
+        Draw fire and ice planets
+        around the current tile.
+    */
+
+    drawPlanets(
+        sx(tiles[currentTileIndex].x),
+        sy(tiles[currentTileIndex].y),
+        scale
+    );
+}
+
+
+/* =========================================================
+   BACKGROUND
+   ========================================================= */
+
+function drawBackground(
+    width,
+    height
+) {
+
+    const settings =
+        level?.settings || {};
+
+
+    const backgroundColor =
+        getHexColor(
+            settings.backgroundColor,
+            "#080a10"
+        );
+
+
+    ctx.fillStyle =
+        backgroundColor;
+
+
+    ctx.fillRect(
+        0,
+        0,
+        width,
+        height
+    );
+
+
+    /*
+        Image.
+    */
+
+    if (backgroundImage) {
+
+        const image =
+            backgroundImage;
+
+
+        const scale =
+            Math.max(
+
+                width /
+                image.width,
+
+                height /
+                image.height
+
+            );
+
+
+        const imageWidth =
+            image.width *
+            scale;
+
+
+        const imageHeight =
+            image.height *
+            scale;
+
+
+        ctx.globalAlpha =
+            Number(
+                settings.backgroundImageOpacity ??
+                settings.bgImageOpacity ??
+                .35
+            );
+
+
+        ctx.drawImage(
+
+            image,
+
+            (
+                width -
+                imageWidth
+            ) / 2,
+
+            (
+                height -
+                imageHeight
+            ) / 2,
+
+            imageWidth,
+
+            imageHeight
+        );
+
+
+        ctx.globalAlpha =
+            1;
+    }
+
+
+    /*
+        Grid.
+    */
+
+    ctx.strokeStyle =
+        "rgba(255,255,255,.035)";
+
+
+    ctx.lineWidth = 1;
+
+
+    const gridSize = 50;
+
+
+    for (
+        let x = 0;
+        x < width;
+        x += gridSize
+    ) {
+
+        ctx.beginPath();
+
+        ctx.moveTo(
+            x,
+            0
+        );
+
+        ctx.lineTo(
+            x,
+            height
+        );
+
+        ctx.stroke();
+    }
+
+
+    for (
+        let y = 0;
+        y < height;
+        y += gridSize
+    ) {
+
+        ctx.beginPath();
+
+        ctx.moveTo(
+            0,
+            y
+        );
+
+        ctx.lineTo(
+            width,
+            y
+        );
+
+        ctx.stroke();
+    }
+}
+
+
+/* =========================================================
+   PLANETS
+   ========================================================= */
+
+function drawPlanets(
+    x,
+    y,
+    scale
+) {
+
+    const radius =
+        Math.max(
+            13,
+            Math.min(
+                24,
+                scale * .35
+            )
+        );
+
+
+    /*
+        Fire.
+    */
+
+    const fireX =
+        x -
+        radius * 1.15;
+
+
+    const fireY =
+        y;
+
+
+    const fireGradient =
+        ctx.createRadialGradient(
+            fireX - radius * .35,
+            fireY - radius * .35,
+            radius * .1,
+            fireX,
+            fireY,
+            radius
+        );
+
+
+    fireGradient.addColorStop(
+        0,
+        "#fff"
+    );
+
+
+    fireGradient.addColorStop(
+        .18,
+        "#ffb095"
+    );
+
+
+    fireGradient.addColorStop(
+        .55,
+        "#ff5338"
+    );
+
+
+    fireGradient.addColorStop(
+        1,
+        "#8b1612"
+    );
+
+
+    ctx.beginPath();
+
+    ctx.arc(
+        fireX,
+        fireY,
+        radius,
+        0,
+        Math.PI * 2
+    );
+
+
+    ctx.fillStyle =
+        fireGradient;
+
+
+    ctx.fill();
+
+
+    /*
+        Ice.
+    */
+
+    const iceX =
+        x +
+        radius * 1.15;
+
+
+    const iceY =
+        y;
+
+
+    const iceGradient =
+        ctx.createRadialGradient(
+            iceX - radius * .35,
+            iceY - radius * .35,
+            radius * .1,
+            iceX,
+            iceY,
+            radius
+        );
+
+
+    iceGradient.addColorStop(
+        0,
+        "#fff"
+    );
+
+
+    iceGradient.addColorStop(
+        .18,
+        "#c3f8ff"
+    );
+
+
+    iceGradient.addColorStop(
+        .55,
+        "#45c7ef"
+    );
+
+
+    iceGradient.addColorStop(
+        1,
+        "#15536e"
+    );
+
+
+    ctx.beginPath();
+
+    ctx.arc(
+        iceX,
+        iceY,
+        radius,
+        0,
+        Math.PI * 2
+    );
+
+
+    ctx.fillStyle =
+        iceGradient;
+
+
+    ctx.fill();
+}
+
+
+/* =========================================================
+   STOP AUDIO
+   ========================================================= */
+
+function stopAudio() {
+
+    audio.pause();
+
+
+    try {
+
+        audio.currentTime = 0;
+
+    } catch (_) {}
+
+
+    if (audioUrl) {
+
+        URL.revokeObjectURL(
+            audioUrl
+        );
+
+        audioUrl = null;
+    }
+
+
+    audio.removeAttribute(
+        "src"
+    );
+
+
+    audio.load();
+
+
+    audioLabel.textContent =
+        "Audio: --";
+}
+
+
+/* =========================================================
+   STATUS
+   ========================================================= */
+
+function setStatus(
+    text,
+    ready
+) {
+
+    statusText.textContent =
+        text;
+
+
+    statusDot.classList.toggle(
+        "ready",
+        ready
+    );
+}
+
+
+/* =========================================================
+   COLOR HELPERS
+   ========================================================= */
+
+function getHexColor(
+    value,
+    fallback
+) {
+
+    if (
+        typeof value !==
+        "string"
+    ) {
+
+        return fallback;
+    }
+
+
+    let color =
+        value.trim();
+
+
+    if (!color) {
+        return fallback;
+    }
+
+
+    if (
+        !color.startsWith("#")
+    ) {
+
+        color =
+            "#" +
+            color;
+    }
+
+
+    if (
+        /^#[0-9a-fA-F]{6}$/
+            .test(color)
+    ) {
+
+        return color;
+    }
+
+
+    return fallback;
+}
+
+
+function mixColors(
+    a,
+    b,
+    amount
+) {
+
+    const ca =
+        hexToRgb(a);
+
+
+    const cb =
+        hexToRgb(b);
+
+
+    if (!ca || !cb) {
+        return a;
+    }
+
+
+    const r =
+        Math.round(
+            ca.r +
+            (
+                cb.r -
+                ca.r
+            ) *
+            amount
+        );
+
+
+    const g =
+        Math.round(
+            ca.g +
+            (
+                cb.g -
+                ca.g
+            ) *
+            amount
+        );
+
+
+    const bl =
+        Math.round(
+            ca.b +
+            (
+                cb.b -
+                ca.b
+            ) *
+            amount
+        );
+
+
+    return (
+        "#" +
+        [r,g,bl]
+            .map(
+                n =>
+                    n
+                        .toString(16)
+                        .padStart(
+                            2,
+                            "0"
+                        )
+            )
+            .join("")
+    );
+}
+
+
+function hexToRgb(
+    hex
+) {
+
+    const match =
+        /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i
+            .exec(hex);
+
+
+    if (!match) {
+        return null;
+    }
+
+
+    return {
+
+        r:
+            parseInt(
+                match[1],
+                16
+            ),
+
+        g:
+            parseInt(
+                match[2],
+                16
+            ),
+
+        b:
+            parseInt(
+                match[3],
+                16
+            )
+    };
+}
+
+
+/* =========================================================
+   FILE HELPERS
+   ========================================================= */
+
+function isAudioFile(
+    filename
+) {
+
+    const name =
+        filename.toLowerCase();
+
+
+    return (
+
+        name.endsWith(".ogg") ||
+
+        name.endsWith(".mp3") ||
+
+        name.endsWith(".wav") ||
+
+        name.endsWith(".m4a") ||
+
+        name.endsWith(".aac") ||
+
+        name.endsWith(".flac")
+
+    );
+}
+
+
+function isImageFile(
+    filename
+) {
+
+    const name =
+        filename.toLowerCase();
+
+
+    return (
+
+        name.endsWith(".png") ||
+
+        name.endsWith(".jpg") ||
+
+        name.endsWith(".jpeg") ||
+
+        name.endsWith(".webp") ||
+
+        name.endsWith(".gif")
+
+    );
+}
+
+
+function getFilename(
+    path
+) {
+
+    return String(path)
+        .replace(
+            /\\/g,
+            "/"
+        )
+        .split("/")
+        .pop() || "";
+}
+
+
+function getFolder(
+    path
+) {
+
+    const normalized =
+        String(path)
+            .replace(
+                /\\/g,
+                "/"
+            );
+
+
+    const index =
+        normalized.lastIndexOf(
+            "/"
+        );
+
+
+    if (
+        index === -1
+    ) {
+
+        return "";
+    }
+
+
+    return normalized.substring(
+        0,
+        index
+    );
+}
+
+
+function normalizePath(
+    path
+) {
+
+    return String(path)
+        .replace(
+            /\\/g,
+            "/"
+        )
+        .replace(
+            /^\.?\//,
+            ""
+        )
+        .toLowerCase();
+}
+
+
+function normalizeAngle(
+    angle
+) {
 
     angle %= 360;
 
 
-    if (angle < 0) {
+    if (
+        angle < 0
+    ) {
+
         angle += 360;
     }
 
@@ -1480,33 +3359,28 @@ function normalizeAngle(angle) {
 }
 
 
-function removeExtension(filename) {
+function formatNumber(
+    value
+) {
 
-    return filename
+    return Number(value)
+        .toFixed(2)
         .replace(
-            /\.adofai$/i,
+            /\.00$/,
             ""
         );
 }
 
 
-function formatNumber(number) {
+function formatTime(
+    seconds
+) {
 
-    return Number(number)
-        .toFixed(2)
-        .replace(/\.00$/, "");
-}
-
-
-function formatTime(seconds) {
-
-    if (
-        !Number.isFinite(seconds) ||
-        seconds < 0
-    ) {
-
-        seconds = 0;
-    }
+    seconds =
+        Math.max(
+            0,
+            Number(seconds) || 0
+        );
 
 
     const minutes =
@@ -1524,23 +3398,24 @@ function formatTime(seconds) {
     return (
         minutes +
         ":" +
-        String(secs).padStart(
-            2,
-            "0"
-        )
+        String(secs)
+            .padStart(
+                2,
+                "0"
+            )
     );
 }
 
 
-function formatTimeDetailed(seconds) {
+function formatDetailedTime(
+    seconds
+) {
 
-    if (
-        !Number.isFinite(seconds) ||
-        seconds < 0
-    ) {
-
-        seconds = 0;
-    }
+    seconds =
+        Math.max(
+            0,
+            Number(seconds) || 0
+        );
 
 
     const minutes =
@@ -1557,7 +3432,10 @@ function formatTimeDetailed(seconds) {
 
     const milliseconds =
         Math.floor(
-            (seconds % 1) *
+            (
+                seconds %
+                1
+            ) *
             1000
         );
 
@@ -1565,18 +3443,53 @@ function formatTimeDetailed(seconds) {
     return (
         minutes +
         ":" +
-        String(secs).padStart(2, "0") +
+        String(secs)
+            .padStart(
+                2,
+                "0"
+            ) +
         "." +
-        String(milliseconds).padStart(
-            3,
-            "0"
-        )
+        String(milliseconds)
+            .padStart(
+                3,
+                "0"
+            )
     );
 }
 
 
+function escapeHtml(
+    value
+) {
+
+    return String(value)
+        .replace(
+            /&/g,
+            "&amp;"
+        )
+        .replace(
+            /</g,
+            "&lt;"
+        )
+        .replace(
+            />/g,
+            "&gt;"
+        )
+        .replace(
+            /"/g,
+            "&quot;"
+        )
+        .replace(
+            /'/g,
+            "&#039;"
+        );
+}
+
+
 /* =========================================================
-   INITIAL CANVAS
-========================================================= */
+   INITIALIZE
+   ========================================================= */
 
 resizeCanvas();
+
+updateUI();
