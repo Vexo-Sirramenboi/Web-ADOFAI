@@ -2,335 +2,417 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
 
     <title>ADOFAI Web Player</title>
 
+    <!-- THIS MUST MATCH style.css EXACTLY -->
     <link rel="stylesheet" href="./style.css">
 </head>
 
 <body>
 
-<header class="topbar">
+    <!-- ==========================================
+         APP
+    =========================================== -->
 
-    <div class="logo">
+    <div id="app">
 
-        <div class="logo-orbit"></div>
+        <!-- ======================================
+             TOP BAR
+        ======================================= -->
 
-        <div>
-            <strong>ADOFAI</strong>
-            <span>WEB PLAYER</span>
-        </div>
+        <header class="topbar">
 
-    </div>
+            <div class="brand">
 
-    <div class="status">
-
-        <span id="statusDot"></span>
-
-        <span id="statusText">
-            No level loaded
-        </span>
-
-    </div>
-
-</header>
-
-
-<main>
-
-    <!-- =========================
-         UPLOAD SCREEN
-    ========================== -->
-
-    <section
-        id="uploadScreen"
-        class="upload-screen"
-    >
-
-        <div class="upload-card">
-
-            <div class="upload-icon">
-                +
-            </div>
-
-            <h1>
-                Load an ADOFAI Level
-            </h1>
-
-            <p>
-                Upload an
-                <strong>.adofai</strong>
-                level or a
-                <strong>.zip</strong>
-                level pack.
-            </p>
-
-            <label class="upload-button">
-
-                Choose File
-
-                <input
-                    id="fileInput"
-                    type="file"
-                    accept=".adofai,.zip"
-                    hidden
-                >
-
-            </label>
-
-
-            <div
-                id="dropZone"
-                class="drop-zone"
-            >
-
-                Drop an
-                <code>.adofai</code>
-                or
-                <code>.zip</code>
-                here
-
-            </div>
-
-
-            <div class="supported">
-
-                <span>ADOFAI</span>
-                <span>ZIP</span>
-                <span>OGG</span>
-                <span>MP3</span>
-                <span>WAV</span>
-
-            </div>
-
-
-            <p class="privacy">
-
-                Everything is processed locally
-                in your browser.
-
-            </p>
-
-        </div>
-
-    </section>
-
-
-    <!-- =========================
-         LEVEL SELECTOR
-    ========================== -->
-
-    <section
-        id="levelSelectScreen"
-        class="level-select-screen hidden"
-    >
-
-        <div class="level-select-card">
-
-            <div class="eyebrow">
-                LEVEL PACK
-            </div>
-
-            <h1>
-                Select a Level
-            </h1>
-
-            <p class="muted">
-                Multiple ADOFAI levels were found
-                in this ZIP.
-            </p>
-
-            <div id="levelList"></div>
-
-            <button
-                id="loadSelectedButton"
-                class="play-button"
-            >
-                Load Level
-            </button>
-
-            <button
-                id="backToUploadButton"
-                class="secondary-button full-button"
-            >
-                Back
-            </button>
-
-        </div>
-
-    </section>
-
-
-    <!-- =========================
-         PLAYER
-    ========================== -->
-
-    <section
-        id="playerScreen"
-        class="player-screen hidden"
-    >
-
-        <div class="level-header">
-
-            <div>
-
-                <div class="eyebrow">
-                    CURRENT LEVEL
+                <div class="brand-icon">
+                    <div class="planet fire"></div>
+                    <div class="planet ice"></div>
                 </div>
 
-                <h1 id="levelName">
-                    Untitled Level
+                <div class="brand-text">
+
+                    <div class="brand-title">
+                        ADOFAI
+                    </div>
+
+                    <div class="brand-subtitle">
+                        WEB PLAYER
+                    </div>
+
+                </div>
+
+            </div>
+
+
+            <div class="connection-status">
+
+                <span
+                    id="statusDot"
+                    class="status-dot"
+                ></span>
+
+                <span id="statusText">
+                    Ready
+                </span>
+
+            </div>
+
+        </header>
+
+
+        <!-- ======================================
+             UPLOAD SCREEN
+        ======================================= -->
+
+        <section
+            id="uploadScreen"
+            class="screen upload-screen"
+        >
+
+            <div class="upload-card">
+
+                <div class="upload-logo">
+
+                    <div class="orb orb-fire"></div>
+
+                    <div class="orb orb-ice"></div>
+
+                </div>
+
+
+                <div class="small-label">
+                    ADOFAI WEB PLAYER
+                </div>
+
+
+                <h1>
+                    Play your levels
+                    <span>in the browser.</span>
                 </h1>
 
-                <div class="metadata">
 
-                    <span id="bpmLabel">
-                        BPM: --
+                <p class="description">
+
+                    Import an
+                    <strong>.adofai</strong>
+                    level or a
+                    <strong>.zip</strong>
+                    level pack.
+
+                    Everything is processed locally
+                    in your browser.
+
+                </p>
+
+
+                <label
+                    for="fileInput"
+                    class="upload-button"
+                >
+
+                    <span class="upload-button-icon">
+                        +
                     </span>
 
-                    <span id="tileLabel">
-                        Tiles: --
+                    <span>
+                        Choose Level
                     </span>
 
-                    <span id="offsetLabel">
-                        Offset: --
-                    </span>
+                    <input
+                        id="fileInput"
+                        type="file"
+                        accept=".adofai,.zip"
+                        hidden
+                    >
 
-                    <span id="audioLabel">
-                        Audio: --
-                    </span>
+                </label>
+
+
+                <div
+                    id="dropZone"
+                    class="drop-zone"
+                >
+
+                    <div class="drop-icon">
+                        ↓
+                    </div>
+
+                    <div>
+                        Drop an
+                        <strong>.adofai</strong>
+                        or
+                        <strong>.zip</strong>
+                        here
+                    </div>
+
+                </div>
+
+
+                <div class="format-list">
+
+                    <span>.ADOFAI</span>
+                    <span>.ZIP</span>
+                    <span>.OGG</span>
+                    <span>.MP3</span>
+                    <span>.WAV</span>
 
                 </div>
 
             </div>
 
-
-            <button
-                id="newLevelButton"
-                class="secondary-button"
-            >
-                Load Another
-            </button>
-
-        </div>
+        </section>
 
 
-        <!-- =========================
-             GAME VIEW
-        ========================== -->
+        <!-- ======================================
+             LEVEL SELECT
+        ======================================= -->
 
-        <div class="game-container">
+        <section
+            id="levelSelectScreen"
+            class="screen centered-screen hidden"
+        >
 
-            <canvas id="gameCanvas"></canvas>
+            <div class="panel level-panel">
 
+                <div class="small-label">
+                    LEVEL PACK
+                </div>
+
+                <h2>
+                    Select a Level
+                </h2>
+
+                <p class="panel-description">
+
+                    Multiple ADOFAI levels were found
+                    inside this ZIP.
+
+                </p>
+
+
+                <div
+                    id="levelList"
+                    class="level-list"
+                ></div>
+
+
+                <button
+                    id="loadSelectedButton"
+                    class="primary-button"
+                >
+                    Load Level
+                </button>
+
+
+                <button
+                    id="backToUploadButton"
+                    class="secondary-button"
+                >
+                    Back
+                </button>
+
+            </div>
+
+        </section>
+
+
+        <!-- ======================================
+             PLAYER
+        ======================================= -->
+
+        <section
+            id="playerScreen"
+            class="screen player-screen hidden"
+        >
+
+            <!-- Level information -->
+
+            <div class="level-header">
+
+                <div>
+
+                    <div class="small-label">
+                        CURRENT LEVEL
+                    </div>
+
+                    <h2 id="levelName">
+                        Untitled Level
+                    </h2>
+
+
+                    <div class="metadata">
+
+                        <span id="bpmLabel">
+                            BPM: --
+                        </span>
+
+                        <span id="tileLabel">
+                            Tiles: --
+                        </span>
+
+                        <span id="offsetLabel">
+                            Offset: --
+                        </span>
+
+                        <span id="audioLabel">
+                            Audio: --
+                        </span>
+
+                    </div>
+
+                </div>
+
+
+                <button
+                    id="newLevelButton"
+                    class="secondary-button"
+                >
+                    Load Another
+                </button>
+
+            </div>
+
+
+            <!-- ==================================
+                 GAME
+            =================================== -->
 
             <div
-                id="gameMessage"
-                class="game-message hidden"
+                id="gameContainer"
+                class="game-container"
             >
-                No level loaded
-            </div>
+
+                <canvas
+                    id="gameCanvas"
+                ></canvas>
 
 
-            <div class="game-overlay">
+                <!-- Flash overlay -->
 
-                <div class="current-info">
+                <div
+                    id="flashOverlay"
+                    class="flash-overlay"
+                ></div>
 
-                    <span id="currentTile">
+
+                <!-- Current tile info -->
+
+                <div class="game-info">
+
+                    <div id="currentTile">
                         Tile 0 / 0
-                    </span>
+                    </div>
 
-                    <span id="currentTime">
+                    <div id="currentTime">
                         0:00.000
-                    </span>
+                    </div>
 
                 </div>
 
 
-                <div class="beat-indicator">
+                <!-- Beat indicator -->
 
-                    <div id="beatCircle"></div>
+                <div class="beat-container">
 
+                    <div
+                        id="beatCircle"
+                        class="beat-circle"
+                    ></div>
+
+                </div>
+
+
+                <!-- Game center -->
+
+                <div
+                    id="gameMessage"
+                    class="game-message"
+                >
+                    Load an ADOFAI level
                 </div>
 
             </div>
 
-        </div>
+
+            <!-- ==================================
+                 CONTROLS
+            =================================== -->
+
+            <div class="controls">
+
+                <button
+                    id="restartButton"
+                    class="control-button"
+                >
+                    ↻
+                    <span>Restart</span>
+                </button>
 
 
-        <!-- =========================
-             CONTROLS
-        ========================== -->
-
-        <div class="controls">
-
-            <button
-                id="restartButton"
-                class="control-button"
-            >
-                ↻
-                <span>Restart</span>
-            </button>
+                <button
+                    id="playButton"
+                    class="primary-button play-button"
+                >
+                    ▶
+                    <span>Play</span>
+                </button>
 
 
-            <button
-                id="playButton"
-                class="play-button"
-            >
-                ▶
-                <span>Play</span>
-            </button>
+                <button
+                    id="pauseButton"
+                    class="control-button"
+                >
+                    ❚❚
+                    <span>Pause</span>
+                </button>
+
+            </div>
 
 
-            <button
-                id="pauseButton"
-                class="control-button"
-            >
-                ❚❚
-                <span>Pause</span>
-            </button>
+            <!-- ==================================
+                 TIMELINE
+            =================================== -->
 
-        </div>
+            <div class="timeline">
 
-
-        <!-- =========================
-             TIMELINE
-        ========================== -->
-
-        <div class="timeline-container">
-
-            <span id="timeCurrent">
-                0:00
-            </span>
-
-            <input
-                id="timeline"
-                type="range"
-                min="0"
-                max="100"
-                value="0"
-                step="0.01"
-            >
-
-            <span id="timeTotal">
-                0:00
-            </span>
-
-        </div>
+                <span id="timeCurrent">
+                    0:00
+                </span>
 
 
-        <!-- =========================
-             SETTINGS
-        ========================== -->
+                <input
+                    id="timelineSlider"
+                    type="range"
+                    min="0"
+                    max="100"
+                    step="0.01"
+                    value="0"
+                >
 
-        <div class="settings-panel">
 
-            <div class="setting">
+                <span id="timeTotal">
+                    0:00
+                </span>
 
-                <label for="speedSlider">
-                    Playback Speed
-                </label>
+            </div>
+
+
+            <!-- ==================================
+                 SPEED
+            =================================== -->
+
+            <div class="settings">
+
+                <div class="setting-title">
+                    PLAYBACK SPEED
+                </div>
+
 
                 <div class="speed-row">
 
@@ -339,9 +421,10 @@
                         type="range"
                         min="0.25"
                         max="2"
-                        value="1"
                         step="0.05"
+                        value="1"
                     >
+
 
                     <strong id="speedValue">
                         1.00×
@@ -351,40 +434,40 @@
 
             </div>
 
-        </div>
+
+            <!-- Keyboard shortcuts -->
+
+            <div class="keyboard-help">
+
+                <span>
+                    <kbd>SPACE</kbd>
+                    Play / Pause
+                </span>
+
+                <span>
+                    <kbd>R</kbd>
+                    Restart
+                </span>
+
+            </div>
+
+        </section>
+
+    </div>
 
 
-        <div class="keyboard-help">
+    <!-- ==========================================
+         JSZIP
+    =========================================== -->
 
-            <span>
-                <kbd>SPACE</kbd>
-                Play / Pause
-            </span>
-
-            <span>
-                <kbd>R</kbd>
-                Restart
-            </span>
-
-        </div>
-
-    </section>
-
-</main>
+    <script
+        src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"
+    ></script>
 
 
-<!--
-    JSZip lets the browser open ZIP files.
+    <!-- YOUR JAVASCRIPT -->
 
-    This is loaded from a CDN, so GitHub Pages
-    does not need Node.js or npm.
--->
-
-<script
-    src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js">
-</script>
-
-<script src="app.js"></script>
+    <script src="./app.js"></script>
 
 </body>
 </html>
