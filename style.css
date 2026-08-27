@@ -1,1257 +1,2761 @@
-* {
-    box-sizing: border-box;
-}
-
-:root {
-
-    --bg: #08090d;
-
-    --panel: #101218;
-
-    --panel2: #151821;
-
-    --border: #282c37;
-
-    --text: #f4f5f7;
-
-    --muted: #858b99;
-
-    --white: #ffffff;
-
-}
+"use strict";
 
 
-html,
-body {
+/* =========================================================
+   ADOFAI WEB PLAYER
+   =========================================================
 
-    margin: 0;
+   Features:
 
-    width: 100%;
+   - .adofai loading
+   - ZIP loading
+   - Multiple levels inside ZIP
+   - Automatic audio detection
+   - Browser Blob URLs
+   - Canvas path rendering
+   - BPM timing
+   - Audio synchronization
+   - Play / pause / restart
+   - Timeline seeking
+   - Playback speed
+========================================================= */
 
-    height: 100%;
 
-    overflow: hidden;
+/* =========================================================
+   DOM
+========================================================= */
 
-    background:
-        radial-gradient(
-            circle at 50% 20%,
-            #191c25 0%,
-            #08090d 60%
+const fileInput =
+    document.getElementById("fileInput");
+
+const dropZone =
+    document.getElementById("dropZone");
+
+const uploadScreen =
+    document.getElementById("uploadScreen");
+
+const levelSelectScreen =
+    document.getElementById("levelSelectScreen");
+
+const playerScreen =
+    document.getElementById("playerScreen");
+
+const levelList =
+    document.getElementById("levelList");
+
+const loadSelectedButton =
+    document.getElementById(
+        "loadSelectedButton"
+    );
+
+const backToUploadButton =
+    document.getElementById(
+        "backToUploadButton"
+    );
+
+const newLevelButton =
+    document.getElementById(
+        "newLevelButton"
+    );
+
+const levelName =
+    document.getElementById(
+        "levelName"
+    );
+
+const bpmLabel =
+    document.getElementById(
+        "bpmLabel"
+    );
+
+const tileLabel =
+    document.getElementById(
+        "tileLabel"
+    );
+
+const offsetLabel =
+    document.getElementById(
+        "offsetLabel"
+    );
+
+const audioLabel =
+    document.getElementById(
+        "audioLabel"
+    );
+
+const statusDot =
+    document.getElementById(
+        "statusDot"
+    );
+
+const statusText =
+    document.getElementById(
+        "statusText"
+    );
+
+const canvas =
+    document.getElementById(
+        "gameCanvas"
+    );
+
+const ctx =
+    canvas.getContext("2d");
+
+const playButton =
+    document.getElementById(
+        "playButton"
+    );
+
+const pauseButton =
+    document.getElementById(
+        "pauseButton"
+    );
+
+const restartButton =
+    document.getElementById(
+        "restartButton"
+    );
+
+const timeline =
+    document.getElementById(
+        "timeline"
+    );
+
+const timeCurrent =
+    document.getElementById(
+        "timeCurrent"
+    );
+
+const timeTotal =
+    document.getElementById(
+        "timeTotal"
+    );
+
+const currentTile =
+    document.getElementById(
+        "currentTile"
+    );
+
+const currentTime =
+    document.getElementById(
+        "currentTime"
+    );
+
+const speedSlider =
+    document.getElementById(
+        "speedSlider"
+    );
+
+const speedValue =
+    document.getElementById(
+        "speedValue"
+    );
+
+const beatCircle =
+    document.getElementById(
+        "beatCircle"
+    );
+
+
+/* =========================================================
+   STATE
+========================================================= */
+
+let level = null;
+
+let tiles = [];
+
+let bpm = 100;
+
+let offset = 0;
+
+let totalDuration = 0;
+
+let currentTimeSeconds = 0;
+
+let currentTileIndex = 0;
+
+let playing = false;
+
+let playbackSpeed = 1;
+
+let animationFrame = null;
+
+let lastAnimationTime = 0;
+
+let lastBeatIndex = -1;
+
+
+/*
+    Audio element.
+
+    The audio file extracted from the ZIP
+    gets converted into a browser Blob URL.
+*/
+
+let audioPlayer =
+    new Audio();
+
+audioPlayer.preload =
+    "auto";
+
+
+/*
+    Current audio Blob URL.
+*/
+
+let audioUrl = null;
+
+
+/*
+    Files extracted from ZIP.
+*/
+
+let zipFiles = {};
+
+
+/*
+    Levels discovered inside ZIP.
+*/
+
+let availableLevels = [];
+
+
+/*
+    Currently selected ZIP level.
+*/
+
+let selectedLevelIndex = 0;
+
+
+/* =========================================================
+   FILE INPUT
+========================================================= */
+
+fileInput.addEventListener(
+    "change",
+    event => {
+
+        const file =
+            event.target.files[0];
+
+        if (!file) {
+            return;
+        }
+
+        loadFile(file);
+    }
+);
+
+
+/* =========================================================
+   DRAG AND DROP
+========================================================= */
+
+dropZone.addEventListener(
+    "dragover",
+    event => {
+
+        event.preventDefault();
+
+        dropZone.classList.add(
+            "dragging"
+        );
+    }
+);
+
+
+dropZone.addEventListener(
+    "dragleave",
+    () => {
+
+        dropZone.classList.remove(
+            "dragging"
+        );
+    }
+);
+
+
+dropZone.addEventListener(
+    "drop",
+    event => {
+
+        event.preventDefault();
+
+        dropZone.classList.remove(
+            "dragging"
         );
 
-    color: var(--text);
+        const file =
+            event.dataTransfer.files[0];
 
-    font-family:
-        Inter,
-        system-ui,
-        -apple-system,
-        BlinkMacSystemFont,
-        "Segoe UI",
-        sans-serif;
+        if (file) {
+            loadFile(file);
+        }
+    }
+);
 
+
+/* =========================================================
+   MAIN FILE LOADER
+========================================================= */
+
+async function loadFile(file) {
+
+    try {
+
+        statusText.textContent =
+            "Loading...";
+
+
+        /*
+            ADOFAI
+        */
+
+        if (
+            file.name
+                .toLowerCase()
+                .endsWith(".adofai")
+        ) {
+
+            await loadAdoFAIFile(file);
+
+            return;
+        }
+
+
+        /*
+            ZIP
+        */
+
+        if (
+            file.name
+                .toLowerCase()
+                .endsWith(".zip")
+        ) {
+
+            await loadZipFile(file);
+
+            return;
+        }
+
+
+        throw new Error(
+            "Please select an .adofai or .zip file."
+        );
+
+
+    } catch (error) {
+
+        console.error(error);
+
+        statusText.textContent =
+            "Error";
+
+        alert(
+            "Could not load this file.\n\n" +
+            error.message
+        );
+    }
 }
 
 
-button,
-input {
+/* =========================================================
+   LOAD DIRECT ADOFAI
+========================================================= */
 
-    font: inherit;
+async function loadAdoFAIFile(file) {
 
+    const text =
+        await file.text();
+
+
+    const data =
+        JSON.parse(text);
+
+
+    /*
+        Clear ZIP assets.
+    */
+
+    zipFiles = {};
+
+    availableLevels = [];
+
+
+    /*
+        Parse.
+    */
+
+    await prepareLevel(
+        data,
+        file.name,
+        null
+    );
 }
 
 
-button {
-
-    user-select: none;
-
-}
-
-
-.hidden {
-
-    display: none !important;
-
-}
-
-
-/* =========================================
-   TOP BAR
-========================================= */
-
-.topbar {
-
-    position: fixed;
-
-    z-index: 100;
-
-    top: 0;
-
-    left: 0;
-
-    width: 100%;
-
-    height: 70px;
-
-    display: flex;
-
-    align-items: center;
-
-    justify-content: space-between;
-
-    padding: 0 28px;
-
-    background:
-        rgba(8,9,13,.82);
-
-    backdrop-filter:
-        blur(18px);
-
-    border-bottom:
-        1px solid rgba(255,255,255,.06);
-
-}
-
-
-.logo {
-
-    display: flex;
-
-    align-items: center;
-
-    gap: 12px;
-
-}
-
-
-.logo strong {
-
-    display: block;
-
-    font-size: 15px;
-
-    letter-spacing: 2px;
-
-}
-
-
-.logo span {
-
-    display: block;
-
-    margin-top: 2px;
-
-    color: var(--muted);
-
-    font-size: 9px;
-
-    letter-spacing: 2px;
-
-}
-
-
-.logo-orbit {
-
-    width: 27px;
-
-    height: 27px;
-
-    border:
-        2px solid white;
-
-    border-radius: 50%;
-
-    position: relative;
-
-    animation:
-        orbit 3s linear infinite;
-
-}
-
-
-.logo-orbit::after {
-
-    content: "";
-
-    position: absolute;
-
-    width: 6px;
-
-    height: 6px;
-
-    top: -4px;
-
-    left: 8px;
-
-    background: white;
-
-    border-radius: 50%;
-
-}
-
-
-@keyframes orbit {
-
-    to {
-
-        transform:
-            rotate(360deg);
-
+/* =========================================================
+   LOAD ZIP
+========================================================= */
+
+async function loadZipFile(file) {
+
+    if (
+        typeof JSZip ===
+        "undefined"
+    ) {
+
+        throw new Error(
+            "JSZip failed to load. " +
+            "Check your internet connection."
+        );
     }
 
+
+    const zip =
+        await JSZip.loadAsync(file);
+
+
+    zipFiles = {};
+
+
+    /*
+        Extract every file.
+
+        Directories are ignored.
+    */
+
+    for (
+        const entry of
+        Object.values(zip.files)
+    ) {
+
+        if (entry.dir) {
+            continue;
+        }
+
+
+        zipFiles[entry.name] =
+            await entry.async("blob");
+    }
+
+
+    /*
+        Find ADOFAI files.
+    */
+
+    const adofaiNames =
+        Object.keys(zipFiles)
+            .filter(name =>
+                name
+                    .toLowerCase()
+                    .endsWith(".adofai")
+            );
+
+
+    if (!adofaiNames.length) {
+
+        throw new Error(
+            "The ZIP does not contain an .adofai file."
+        );
+    }
+
+
+    /*
+        Parse every level.
+
+        This lets us display a level selector.
+    */
+
+    availableLevels = [];
+
+
+    for (
+        const filename of
+        adofaiNames
+    ) {
+
+        try {
+
+            const blob =
+                zipFiles[filename];
+
+
+            const text =
+                await blob.text();
+
+
+            const data =
+                JSON.parse(text);
+
+
+            const settings =
+                data.settings || {};
+
+
+            const name =
+                settings.song ||
+                settings.levelDesc ||
+                getFilename(filename);
+
+
+            availableLevels.push({
+
+                filename,
+
+                name,
+
+                data
+
+            });
+
+
+        } catch (error) {
+
+            console.warn(
+                "Could not parse:",
+                filename,
+                error
+            );
+        }
+    }
+
+
+    if (!availableLevels.length) {
+
+        throw new Error(
+            "No valid ADOFAI levels were found."
+        );
+    }
+
+
+    /*
+        One level = load immediately.
+
+        Multiple levels = selector.
+    */
+
+    if (
+        availableLevels.length === 1
+    ) {
+
+        await prepareLevel(
+
+            availableLevels[0].data,
+
+            availableLevels[0].filename,
+
+            zipFiles
+
+        );
+
+    } else {
+
+        showLevelSelector();
+    }
 }
 
 
-.status {
-
-    display: flex;
-
-    align-items: center;
-
-    gap: 8px;
-
-    color: var(--muted);
-
-    font-size: 12px;
-
-}
-
-
-#statusDot {
-
-    width: 7px;
-
-    height: 7px;
-
-    border-radius: 50%;
-
-    background: #555;
-
-}
-
-
-#statusDot.ready {
-
-    background: white;
-
-    box-shadow:
-        0 0 12px
-        rgba(255,255,255,.9);
-
-}
-
-
-/* =========================================
-   GENERAL
-========================================= */
-
-main {
-
-    width: 100%;
-
-    height: 100%;
-
-}
-
-
-/* =========================================
-   UPLOAD
-========================================= */
-
-.upload-screen {
-
-    width: 100%;
-
-    height: 100%;
-
-    display: flex;
-
-    justify-content: center;
-
-    align-items: center;
-
-    padding: 90px 20px 20px;
-
-}
-
-
-.upload-card {
-
-    width:
-        min(580px, 100%);
-
-    padding: 48px;
-
-    text-align: center;
-
-    background:
-        rgba(16,18,24,.88);
-
-    border:
-        1px solid var(--border);
-
-    border-radius: 22px;
-
-    box-shadow:
-        0 30px 100px
-        rgba(0,0,0,.5),
-
-        inset 0 1px
-        rgba(255,255,255,.04);
-
-}
-
-
-.upload-icon {
-
-    width: 72px;
-
-    height: 72px;
-
-    margin:
-        0 auto 25px;
-
-    display: flex;
-
-    align-items: center;
-
-    justify-content: center;
-
-    border:
-        1px solid #353a47;
-
-    border-radius: 20px;
-
-    background:
-        #171a22;
-
-    font-size: 34px;
-
-    font-weight: 200;
-
-}
-
-
-.upload-card h1 {
-
-    margin:
-        0 0 12px;
-
-    font-size: 30px;
-
-}
-
-
-.upload-card p {
-
-    max-width: 450px;
-
-    margin:
-        0 auto 28px;
-
-    color: var(--muted);
-
-    line-height: 1.6;
-
-}
-
-
-.upload-card strong {
-
-    color: white;
-
-}
-
-
-.upload-button {
-
-    display: inline-flex;
-
-    align-items: center;
-
-    justify-content: center;
-
-    padding:
-        13px 25px;
-
-    background: white;
-
-    color: black;
-
-    border-radius: 10px;
-
-    font-weight: 700;
-
-    cursor: pointer;
-
-    transition:
-        transform .2s,
-        opacity .2s;
-
-}
-
-
-.upload-button:hover {
-
-    transform:
-        translateY(-2px);
-
-    opacity: .9;
-
-}
-
-
-.drop-zone {
-
-    margin-top: 22px;
-
-    padding: 25px;
-
-    border:
-        1px dashed #363b48;
-
-    border-radius: 12px;
-
-    color: var(--muted);
-
-    font-size: 13px;
-
-    transition:
-        border-color .2s,
-        background .2s;
-
-}
-
-
-.drop-zone.dragging {
-
-    border-color: white;
-
-    background:
-        rgba(255,255,255,.05);
-
-}
-
-
-.drop-zone code {
-
-    color: white;
-
-}
-
-
-.supported {
-
-    display: flex;
-
-    justify-content: center;
-
-    flex-wrap: wrap;
-
-    gap: 7px;
-
-    margin-top: 18px;
-
-}
-
-
-.supported span {
-
-    padding:
-        5px 8px;
-
-    border:
-        1px solid #292e39;
-
-    border-radius: 6px;
-
-    color: #777e8c;
-
-    font-size: 9px;
-
-    letter-spacing: 1px;
-
-}
-
-
-.privacy {
-
-    margin-top:
-        20px !important;
-
-    margin-bottom:
-        0 !important;
-
-    font-size: 11px;
-
-}
-
-
-/* =========================================
+/* =========================================================
    LEVEL SELECTOR
-========================================= */
+========================================================= */
 
-.level-select-screen {
+function showLevelSelector() {
 
-    width: 100%;
+    uploadScreen.classList.add(
+        "hidden"
+    );
 
-    height: 100%;
+    playerScreen.classList.add(
+        "hidden"
+    );
 
-    display: flex;
+    levelSelectScreen.classList.remove(
+        "hidden"
+    );
 
-    align-items: center;
 
-    justify-content: center;
+    selectedLevelIndex = 0;
 
-    padding: 90px 20px 20px;
 
+    renderLevelList();
 }
 
 
-.level-select-card {
+function renderLevelList() {
 
-    width:
-        min(650px,100%);
+    levelList.innerHTML = "";
 
-    max-height: 80vh;
 
-    overflow-y: auto;
+    availableLevels.forEach(
+        (entry, index) => {
 
-    padding: 35px;
+            const option =
+                document.createElement(
+                    "div"
+                );
 
-    background:
-        rgba(16,18,24,.92);
 
-    border:
-        1px solid var(--border);
+            option.className =
+                "level-option";
 
-    border-radius: 18px;
 
+            if (
+                index ===
+                selectedLevelIndex
+            ) {
+
+                option.classList.add(
+                    "selected"
+                );
+            }
+
+
+            option.innerHTML = `
+
+                <div class="level-radio"></div>
+
+                <div>
+
+                    <div class="level-option-title">
+                        ${escapeHtml(entry.name)}
+                    </div>
+
+                    <div class="level-option-file">
+                        ${escapeHtml(entry.filename)}
+                    </div>
+
+                </div>
+
+            `;
+
+
+            option.addEventListener(
+                "click",
+                () => {
+
+                    selectedLevelIndex =
+                        index;
+
+                    renderLevelList();
+                }
+            );
+
+
+            levelList.appendChild(
+                option
+            );
+        }
+    );
 }
 
 
-.level-select-card h1 {
+loadSelectedButton.addEventListener(
+    "click",
+    async () => {
 
-    margin:
-        0 0 8px;
+        const entry =
+            availableLevels[
+                selectedLevelIndex
+            ];
 
-}
 
+        if (!entry) {
+            return;
+        }
 
-.muted {
 
-    color: var(--muted);
+        try {
 
-}
+            statusText.textContent =
+                "Loading level...";
 
 
-.level-option {
+            await prepareLevel(
 
-    display: flex;
+                entry.data,
 
-    align-items: center;
+                entry.filename,
 
-    gap: 15px;
+                zipFiles
 
-    padding: 15px;
+            );
 
-    margin:
-        10px 0;
+        } catch (error) {
 
-    border:
-        1px solid var(--border);
+            console.error(error);
 
-    border-radius: 11px;
+            alert(
+                "Could not load this level.\n\n" +
+                error.message
+            );
+        }
+    }
+);
 
-    background:
-        rgba(255,255,255,.015);
 
-    cursor: pointer;
+/* =========================================================
+   PREPARE LEVEL
+========================================================= */
 
-    transition:
-        background .15s,
-        border-color .15s;
+async function prepareLevel(
+    data,
+    filename,
+    assets
+) {
 
-}
+    if (
+        !data ||
+        typeof data !== "object"
+    ) {
 
+        throw new Error(
+            "Invalid ADOFAI level."
+        );
+    }
 
-.level-option:hover {
 
-    background:
-        rgba(255,255,255,.04);
+    level = data;
 
-}
 
+    const settings =
+        data.settings || {};
 
-.level-option.selected {
 
-    border-color:
-        rgba(255,255,255,.6);
+    /*
+        BPM
+    */
 
-    background:
-        rgba(255,255,255,.06);
+    bpm =
+        Number(settings.bpm);
 
-}
 
+    if (
+        !Number.isFinite(bpm) ||
+        bpm <= 0
+    ) {
 
-.level-radio {
+        bpm = 100;
+    }
 
-    width: 17px;
 
-    height: 17px;
+    /*
+        Offset
 
-    border:
-        1px solid #555;
+        Usually milliseconds.
+    */
 
-    border-radius: 50%;
+    offset =
+        Number(settings.offset);
 
-    flex-shrink: 0;
 
-}
+    if (
+        !Number.isFinite(offset)
+    ) {
 
+        offset = 0;
+    }
 
-.level-option.selected
-.level-radio {
 
-    border-color: white;
+    /*
+        AngleData
+    */
 
-    box-shadow:
-        inset 0 0 0 4px
-        #101218;
+    const angleData =
+        Array.isArray(data.angleData)
+            ? data.angleData
+            : [];
 
-    background: white;
 
-}
+    if (!angleData.length) {
 
+        throw new Error(
+            "This level does not contain angleData."
+        );
+    }
 
-.level-option-title {
 
-    font-weight: 700;
+    /*
+        Build path.
+    */
 
-}
-
-
-.level-option-file {
-
-    margin-top: 3px;
-
-    color: var(--muted);
-
-    font-size: 11px;
-
-}
-
-
-.full-button {
-
-    width: 100%;
-
-    margin-top: 10px;
-
-}
-
-
-/* =========================================
-   PLAYER
-========================================= */
-
-.player-screen {
-
-    width: 100%;
-
-    height: 100%;
-
-    overflow-y: auto;
-
-    padding:
-        100px 30px 40px;
-
-}
-
-
-.level-header {
-
-    width:
-        min(1200px,100%);
-
-    margin:
-        0 auto 20px;
-
-    display: flex;
-
-    justify-content: space-between;
-
-    align-items: center;
-
-    gap: 20px;
-
-}
-
-
-.eyebrow {
-
-    margin-bottom: 5px;
-
-    color: var(--muted);
-
-    font-size: 10px;
-
-    letter-spacing: 2px;
-
-}
-
-
-.level-header h1 {
-
-    margin:
-        0 0 10px;
-
-    font-size: 28px;
-
-}
-
-
-.metadata {
-
-    display: flex;
-
-    flex-wrap: wrap;
-
-    gap: 15px;
-
-    color: var(--muted);
-
-    font-size: 11px;
-
-}
-
-
-.secondary-button {
-
-    padding:
-        10px 15px;
-
-    border:
-        1px solid var(--border);
-
-    border-radius: 9px;
-
-    background:
-        var(--panel);
-
-    color: white;
-
-    cursor: pointer;
-
-    transition:
-        background .15s,
-        transform .15s;
-
-}
-
-
-.secondary-button:hover {
-
-    background:
-        var(--panel2);
-
-    transform:
-        translateY(-1px);
-
-}
-
-
-/* =========================================
-   GAME
-========================================= */
-
-.game-container {
-
-    position: relative;
-
-    width:
-        min(1200px,100%);
-
-    height:
-        min(62vh,650px);
-
-    margin: 0 auto;
-
-    overflow: hidden;
-
-    border:
-        1px solid var(--border);
-
-    border-radius: 18px;
-
-    background:
-        radial-gradient(
-            circle at center,
-            #171a22 0%,
-            #090a0e 70%
+    tiles =
+        buildTilePath(
+            angleData
         );
 
-    box-shadow:
-        inset 0 0 100px
-        rgba(0,0,0,.5),
 
-        0 20px 80px
-        rgba(0,0,0,.35);
+    /*
+        Calculate timing.
+    */
 
+    calculateTiming();
+
+
+    /*
+        Reset audio.
+    */
+
+    stopAudio();
+
+
+    /*
+        Find audio.
+    */
+
+    let audioName =
+        null;
+
+
+    if (assets) {
+
+        audioName =
+            findAudioForLevel(
+                data,
+                filename,
+                assets
+            );
+    }
+
+
+    /*
+        Load audio.
+    */
+
+    if (audioName) {
+
+        await loadAudioBlob(
+            assets[audioName],
+            audioName
+        );
+
+    } else {
+
+        audioLabel.textContent =
+            "Audio: none";
+
+        console.warn(
+            "No audio file found."
+        );
+    }
+
+
+    /*
+        Name.
+    */
+
+    const displayName =
+        settings.song ||
+        settings.levelDesc ||
+        getFilename(filename);
+
+
+    levelName.textContent =
+        displayName || "Untitled Level";
+
+
+    bpmLabel.textContent =
+        "BPM: " +
+        formatNumber(bpm);
+
+
+    tileLabel.textContent =
+        "Tiles: " +
+        tiles.length;
+
+
+    offsetLabel.textContent =
+        "Offset: " +
+        formatNumber(offset) +
+        " ms";
+
+
+    /*
+        Reset playback.
+    */
+
+    currentTimeSeconds = 0;
+
+    currentTileIndex = 0;
+
+    playing = false;
+
+    lastBeatIndex = -1;
+
+
+    /*
+        Show player.
+    */
+
+    levelSelectScreen.classList.add(
+        "hidden"
+    );
+
+    uploadScreen.classList.add(
+        "hidden"
+    );
+
+    playerScreen.classList.remove(
+        "hidden"
+    );
+
+
+    statusDot.classList.add(
+        "ready"
+    );
+
+    statusText.textContent =
+        "Level loaded";
+
+
+    resizeCanvas();
+
+    updateUI();
+
+    draw();
 }
 
 
-#gameCanvas {
+/* =========================================================
+   FIND AUDIO
+========================================================= */
 
-    width: 100%;
+function findAudioForLevel(
+    data,
+    levelFilename,
+    assets
+) {
 
-    height: 100%;
+    const settings =
+        data.settings || {};
 
-    display: block;
 
+    /*
+        Possible audio setting names.
+    */
+
+    const requested =
+        settings.songFilename ||
+        settings.songFile ||
+        settings.musicFilename ||
+        "";
+
+
+    const assetNames =
+        Object.keys(assets);
+
+
+    /*
+        Exact filename match.
+    */
+
+    if (requested) {
+
+        const exact =
+            assetNames.find(
+                name =>
+                    normalizePath(name) ===
+                    normalizePath(requested)
+            );
+
+
+        if (exact) {
+            return exact;
+        }
+
+
+        /*
+            Sometimes the setting contains
+            only the filename.
+        */
+
+        const basename =
+            getFilename(requested);
+
+
+        const byBasename =
+            assetNames.find(
+                name =>
+                    getFilename(name)
+                        .toLowerCase() ===
+                    basename.toLowerCase()
+            );
+
+
+        if (byBasename) {
+            return byBasename;
+        }
+    }
+
+
+    /*
+        Search for audio files.
+    */
+
+    const audioFiles =
+        assetNames.filter(
+            name =>
+                isAudioFile(name)
+        );
+
+
+    if (!audioFiles.length) {
+        return null;
+    }
+
+
+    /*
+        Try to find an audio file
+        in the same folder as the level.
+    */
+
+    const levelFolder =
+        getFolder(levelFilename);
+
+
+    const sameFolder =
+        audioFiles.find(
+            name =>
+                getFolder(name) ===
+                levelFolder
+        );
+
+
+    if (sameFolder) {
+        return sameFolder;
+    }
+
+
+    /*
+        Try matching the level filename.
+    */
+
+    const levelBase =
+        getFilename(
+            levelFilename
+        )
+            .replace(
+                /\.adofai$/i,
+                ""
+            )
+            .toLowerCase();
+
+
+    const matching =
+        audioFiles.find(
+            name => {
+
+                const audioBase =
+                    getFilename(name)
+                        .replace(
+                            /\.[^.]+$/,
+                            ""
+                        )
+                        .toLowerCase();
+
+
+                return (
+                    audioBase ===
+                    levelBase
+                );
+            }
+        );
+
+
+    if (matching) {
+        return matching;
+    }
+
+
+    /*
+        Otherwise use the first
+        supported audio file.
+    */
+
+    return audioFiles[0];
 }
 
 
-.game-overlay {
+/* =========================================================
+   AUDIO LOADING
+========================================================= */
 
-    position: absolute;
+async function loadAudioBlob(
+    blob,
+    filename
+) {
 
-    top: 18px;
+    if (!blob) {
+        return;
+    }
 
-    left: 20px;
 
-    right: 20px;
+    /*
+        Release previous Blob URL.
+    */
 
-    display: flex;
+    if (audioUrl) {
 
-    justify-content: space-between;
+        URL.revokeObjectURL(
+            audioUrl
+        );
 
-    pointer-events: none;
+        audioUrl = null;
+    }
 
+
+    /*
+        Create a browser URL.
+
+        This is what allows the browser
+        to play the extracted ZIP audio.
+    */
+
+    audioUrl =
+        URL.createObjectURL(
+            blob
+        );
+
+
+    audioPlayer.pause();
+
+    audioPlayer.src =
+        audioUrl;
+
+    audioPlayer.currentTime =
+        0;
+
+    audioPlayer.playbackRate =
+        playbackSpeed;
+
+    audioPlayer.load();
+
+
+    audioLabel.textContent =
+        "Audio: " +
+        getFilename(filename);
+
+
+    /*
+        Wait until metadata is available.
+    */
+
+    await new Promise(
+        resolve => {
+
+            if (
+                audioPlayer.readyState >=
+                1
+            ) {
+
+                resolve();
+
+                return;
+            }
+
+
+            const done = () => {
+
+                audioPlayer.removeEventListener(
+                    "loadedmetadata",
+                    done
+                );
+
+                resolve();
+            };
+
+
+            audioPlayer.addEventListener(
+                "loadedmetadata",
+                done
+            );
+
+
+            /*
+                Don't wait forever.
+            */
+
+            setTimeout(
+                resolve,
+                2500
+            );
+        }
+    );
+
+
+    /*
+        If the audio is longer than
+        our calculated level duration,
+        use the audio duration.
+    */
+
+    if (
+        Number.isFinite(
+            audioPlayer.duration
+        ) &&
+        audioPlayer.duration > 0
+    ) {
+
+        totalDuration =
+            Math.max(
+                totalDuration,
+                audioPlayer.duration
+            );
+    }
 }
 
 
-.current-info {
+/* =========================================================
+   AUDIO EVENTS
+========================================================= */
 
-    display: flex;
+audioPlayer.addEventListener(
+    "ended",
+    () => {
 
-    flex-direction: column;
+        playing = false;
 
-    gap: 4px;
+        currentTimeSeconds =
+            Math.min(
+                audioPlayer.duration ||
+                totalDuration,
+                totalDuration
+            );
 
+        updateCurrentTile();
+
+        updateUI();
+
+        draw();
+    }
+);
+
+
+audioPlayer.addEventListener(
+    "error",
+    () => {
+
+        console.warn(
+            "Browser could not play this audio."
+        );
+
+        audioLabel.textContent =
+            "Audio: unsupported";
+    }
+);
+
+
+/* =========================================================
+   TILE PATH
+========================================================= */
+
+function buildTilePath(
+    angleData
+) {
+
+    const result = [];
+
+
+    let x = 0;
+
+    let y = 0;
+
+
+    /*
+        Distance between visual tiles.
+
+        The value is intentionally small because
+        the entire path is scaled to the canvas.
+    */
+
+    const distance = 1;
+
+
+    for (
+        let i = 0;
+        i < angleData.length;
+        i++
+    ) {
+
+        let angle =
+            Number(
+                angleData[i]
+            );
+
+
+        if (
+            !Number.isFinite(angle)
+        ) {
+
+            angle = 0;
+        }
+
+
+        angle =
+            normalizeAngle(angle);
+
+
+        if (i > 0) {
+
+            const radians =
+                angle *
+                Math.PI /
+                180;
+
+
+            x +=
+                Math.cos(radians) *
+                distance;
+
+
+            y -=
+                Math.sin(radians) *
+                distance;
+        }
+
+
+        result.push({
+
+            index: i,
+
+            angle,
+
+            x,
+
+            y,
+
+            time: 0
+
+        });
+    }
+
+
+    /*
+        Center the level.
+    */
+
+    if (result.length) {
+
+        let minX = Infinity;
+
+        let maxX = -Infinity;
+
+        let minY = Infinity;
+
+        let maxY = -Infinity;
+
+
+        for (
+            const tile of result
+        ) {
+
+            minX =
+                Math.min(
+                    minX,
+                    tile.x
+                );
+
+            maxX =
+                Math.max(
+                    maxX,
+                    tile.x
+                );
+
+            minY =
+                Math.min(
+                    minY,
+                    tile.y
+                );
+
+            maxY =
+                Math.max(
+                    maxY,
+                    tile.y
+                );
+        }
+
+
+        const centerX =
+            (minX + maxX) / 2;
+
+
+        const centerY =
+            (minY + maxY) / 2;
+
+
+        for (
+            const tile of result
+        ) {
+
+            tile.x -= centerX;
+
+            tile.y -= centerY;
+        }
+    }
+
+
+    return result;
 }
 
 
-#currentTile {
+/* =========================================================
+   TIMING
+========================================================= */
 
-    font-size: 12px;
+function calculateTiming() {
 
-    font-weight: 700;
+    if (!tiles.length) {
 
+        totalDuration = 0;
+
+        return;
+    }
+
+
+    const beatDuration =
+        60 / bpm;
+
+
+    for (
+        let i = 0;
+        i < tiles.length;
+        i++
+    ) {
+
+        tiles[i].time =
+            i *
+            beatDuration;
+    }
+
+
+    totalDuration =
+        tiles.length *
+        beatDuration;
 }
 
 
-#currentTime {
+/* =========================================================
+   PLAY
+========================================================= */
 
-    color: var(--muted);
+async function play() {
 
-    font-size: 11px;
+    if (
+        !level ||
+        !tiles.length
+    ) {
 
+        return;
+    }
+
+
+    if (playing) {
+        return;
+    }
+
+
+    /*
+        If at the end,
+        restart.
+    */
+
+    if (
+        currentTimeSeconds >=
+        totalDuration
+    ) {
+
+        currentTimeSeconds = 0;
+
+        if (audioPlayer.src) {
+            audioPlayer.currentTime = 0;
+        }
+    }
+
+
+    playing = true;
+
+
+    /*
+        Audio is the master clock.
+    */
+
+    if (audioPlayer.src) {
+
+        audioPlayer.currentTime =
+            Math.max(
+                0,
+                currentTimeSeconds
+            );
+
+
+        audioPlayer.playbackRate =
+            playbackSpeed;
+
+
+        try {
+
+            await audioPlayer.play();
+
+        } catch (error) {
+
+            console.warn(
+                "Audio playback failed:",
+                error
+            );
+        }
+
+    }
+
+
+    lastAnimationTime =
+        performance.now();
+
+
+    animationFrame =
+        requestAnimationFrame(
+            animationLoop
+        );
 }
 
 
-.beat-indicator {
+/* =========================================================
+   PAUSE
+========================================================= */
 
-    width: 30px;
+function pause() {
 
-    height: 30px;
+    playing = false;
 
-    display: flex;
 
-    align-items: center;
+    audioPlayer.pause();
 
-    justify-content: center;
 
+    if (animationFrame) {
+
+        cancelAnimationFrame(
+            animationFrame
+        );
+
+        animationFrame = null;
+    }
+
+
+    updateUI();
 }
 
 
-#beatCircle {
+/* =========================================================
+   RESTART
+========================================================= */
 
-    width: 12px;
+function restart() {
 
-    height: 12px;
+    pause();
 
-    border-radius: 50%;
 
-    background: white;
+    currentTimeSeconds = 0;
 
-    opacity: .25;
+    currentTileIndex = 0;
 
-    transition:
-        transform .08s,
-        opacity .08s;
+    lastBeatIndex = -1;
 
+
+    if (audioPlayer.src) {
+
+        audioPlayer.currentTime = 0;
+    }
+
+
+    updateUI();
+
+    draw();
 }
 
 
-#beatCircle.beat {
+/* =========================================================
+   ANIMATION
+========================================================= */
 
-    transform:
-        scale(2);
+function animationLoop(now) {
 
-    opacity: 1;
+    if (!playing) {
+        return;
+    }
 
+
+    /*
+        Audio clock.
+
+        This is much more accurate than simply
+        adding frame deltas because the browser
+        audio engine maintains its own clock.
+    */
+
+    if (
+        audioPlayer.src &&
+        !audioPlayer.paused &&
+        Number.isFinite(
+            audioPlayer.currentTime
+        )
+    ) {
+
+        currentTimeSeconds =
+            audioPlayer.currentTime;
+
+    } else {
+
+        /*
+            Fallback clock.
+
+            This allows levels without audio
+            to still be visualized.
+        */
+
+        const delta =
+            (
+                now -
+                lastAnimationTime
+            ) / 1000;
+
+
+        lastAnimationTime =
+            now;
+
+
+        currentTimeSeconds +=
+            delta *
+            playbackSpeed;
+    }
+
+
+    /*
+        Stop at level end.
+    */
+
+    if (
+        currentTimeSeconds >=
+        totalDuration
+    ) {
+
+        currentTimeSeconds =
+            totalDuration;
+
+
+        playing = false;
+
+
+        audioPlayer.pause();
+
+
+        updateCurrentTile();
+
+        updateUI();
+
+        draw();
+
+        return;
+    }
+
+
+    updateCurrentTile();
+
+    updateBeat();
+
+    updateUI();
+
+    draw();
+
+
+    animationFrame =
+        requestAnimationFrame(
+            animationLoop
+        );
 }
 
 
-.game-message {
+/* =========================================================
+   CURRENT TILE
+========================================================= */
 
-    position: absolute;
+function updateCurrentTile() {
 
-    inset: 0;
+    if (!tiles.length) {
+        return;
+    }
 
-    display: flex;
 
-    align-items: center;
+    let index = 0;
 
-    justify-content: center;
 
-    color: var(--muted);
+    for (
+        let i = 0;
+        i < tiles.length;
+        i++
+    ) {
 
+        if (
+            tiles[i].time <=
+            currentTimeSeconds
+        ) {
+
+            index = i;
+
+        } else {
+
+            break;
+        }
+    }
+
+
+    currentTileIndex =
+        Math.min(
+            index,
+            tiles.length - 1
+        );
 }
 
 
-/* =========================================
-   CONTROLS
-========================================= */
+/* =========================================================
+   BEAT
+========================================================= */
 
-.controls {
+function updateBeat() {
 
-    width:
-        min(700px,100%);
+    const beatDuration =
+        60 / bpm;
 
-    margin:
-        18px auto;
 
-    display: flex;
+    const beatIndex =
+        Math.floor(
+            currentTimeSeconds /
+            beatDuration
+        );
 
-    align-items: center;
 
-    justify-content: center;
+    if (
+        beatIndex !==
+        lastBeatIndex
+    ) {
 
-    gap: 10px;
+        lastBeatIndex =
+            beatIndex;
 
+
+        beatCircle.classList.remove(
+            "beat"
+        );
+
+
+        void beatCircle.offsetWidth;
+
+
+        beatCircle.classList.add(
+            "beat"
+        );
+
+
+        setTimeout(
+            () => {
+
+                beatCircle.classList.remove(
+                    "beat"
+                );
+
+            },
+            100
+        );
+    }
 }
 
 
-.control-button,
-.play-button {
+/* =========================================================
+   UI
+========================================================= */
 
-    height: 48px;
+function updateUI() {
 
-    border-radius: 12px;
+    currentTile.textContent =
+        "Tile " +
+        (currentTileIndex + 1) +
+        " / " +
+        tiles.length;
 
-    cursor: pointer;
 
-    transition:
-        transform .15s,
-        background .15s;
+    currentTime.textContent =
+        formatTimeDetailed(
+            currentTimeSeconds
+        );
 
+
+    timeCurrent.textContent =
+        formatTime(
+            currentTimeSeconds
+        );
+
+
+    timeTotal.textContent =
+        formatTime(
+            totalDuration
+        );
+
+
+    if (
+        totalDuration > 0
+    ) {
+
+        timeline.value =
+            (
+                currentTimeSeconds /
+                totalDuration
+            ) * 100;
+
+    } else {
+
+        timeline.value = 0;
+    }
+
+
+    if (playing) {
+
+        playButton.innerHTML =
+            "▶ <span>Playing</span>";
+
+    } else {
+
+        playButton.innerHTML =
+            "▶ <span>Play</span>";
+    }
 }
 
 
-.control-button {
-
-    min-width: 110px;
-
-    display: flex;
-
-    align-items: center;
-
-    justify-content: center;
-
-    gap: 8px;
-
-    border:
-        1px solid var(--border);
-
-    background:
-        var(--panel);
-
-    color: white;
-
-}
-
-
-.play-button {
-
-    min-width: 150px;
-
-    border: 0;
-
-    background: white;
-
-    color: black;
-
-    font-weight: 800;
-
-}
-
-
-.control-button:hover,
-.play-button:hover {
-
-    transform:
-        translateY(-2px);
-
-}
-
-
-/* =========================================
+/* =========================================================
    TIMELINE
-========================================= */
+========================================================= */
 
-.timeline-container {
+timeline.addEventListener(
+    "input",
+    () => {
 
-    width:
-        min(900px,100%);
+        if (
+            !totalDuration
+        ) {
 
-    margin:
-        0 auto;
-
-    display: flex;
-
-    align-items: center;
-
-    gap: 12px;
-
-    color: var(--muted);
-
-    font-size: 11px;
-
-}
+            return;
+        }
 
 
-#timeline {
-
-    flex: 1;
-
-    accent-color: white;
-
-}
+        const percentage =
+            Number(
+                timeline.value
+            ) / 100;
 
 
-/* =========================================
-   SETTINGS
-========================================= */
-
-.settings-panel {
-
-    width:
-        min(500px,100%);
-
-    margin:
-        25px auto 0;
-
-    padding:
-        17px 20px;
-
-    border:
-        1px solid var(--border);
-
-    border-radius: 12px;
-
-    background:
-        rgba(16,18,24,.7);
-
-}
+        currentTimeSeconds =
+            percentage *
+            totalDuration;
 
 
-.setting label {
+        if (
+            audioPlayer.src
+        ) {
 
-    display: block;
+            try {
 
-    margin-bottom: 8px;
+                audioPlayer.currentTime =
+                    currentTimeSeconds;
 
-    color: var(--muted);
+            } catch (error) {
 
-    font-size: 11px;
-
-}
-
-
-.speed-row {
-
-    display: flex;
-
-    align-items: center;
-
-    gap: 15px;
-
-}
+                console.warn(error);
+            }
+        }
 
 
-.speed-row input {
+        updateCurrentTile();
 
-    flex: 1;
+        updateUI();
 
-    accent-color: white;
-
-}
-
-
-.speed-row strong {
-
-    width: 50px;
-
-    text-align: right;
-
-    font-size: 12px;
-
-}
+        draw();
+    }
+);
 
 
-/* =========================================
+/* =========================================================
+   SPEED
+========================================================= */
+
+speedSlider.addEventListener(
+    "input",
+    () => {
+
+        playbackSpeed =
+            Number(
+                speedSlider.value
+            );
+
+
+        speedValue.textContent =
+            playbackSpeed.toFixed(2) +
+            "×";
+
+
+        if (
+            audioPlayer.src
+        ) {
+
+            audioPlayer.playbackRate =
+                playbackSpeed;
+        }
+    }
+);
+
+
+/* =========================================================
+   BUTTONS
+========================================================= */
+
+playButton.addEventListener(
+    "click",
+    play
+);
+
+
+pauseButton.addEventListener(
+    "click",
+    pause
+);
+
+
+restartButton.addEventListener(
+    "click",
+    restart
+);
+
+
+/* =========================================================
+   LOAD ANOTHER
+========================================================= */
+
+newLevelButton.addEventListener(
+    "click",
+    () => {
+
+        pause();
+
+        stopAudio();
+
+
+        level = null;
+
+        tiles = [];
+
+        zipFiles = {};
+
+        availableLevels = [];
+
+
+        playerScreen.classList.add(
+            "hidden"
+        );
+
+        levelSelectScreen.classList.add(
+            "hidden"
+        );
+
+        uploadScreen.classList.remove(
+            "hidden"
+        );
+
+
+        fileInput.value = "";
+
+
+        statusDot.classList.remove(
+            "ready"
+        );
+
+
+        statusText.textContent =
+            "No level loaded";
+    }
+);
+
+
+backToUploadButton.addEventListener(
+    "click",
+    () => {
+
+        levelSelectScreen.classList.add(
+            "hidden"
+        );
+
+        uploadScreen.classList.remove(
+            "hidden"
+        );
+
+
+        fileInput.value = "";
+
+
+        statusDot.classList.remove(
+            "ready"
+        );
+
+
+        statusText.textContent =
+            "No level loaded";
+    }
+);
+
+
+/* =========================================================
    KEYBOARD
-========================================= */
+========================================================= */
 
-.keyboard-help {
+document.addEventListener(
+    "keydown",
+    event => {
 
-    display: flex;
+        if (
+            event.target.tagName ===
+            "INPUT"
+        ) {
 
-    justify-content: center;
+            return;
+        }
 
-    gap: 18px;
 
-    margin-top: 20px;
+        if (
+            event.code ===
+            "Space"
+        ) {
 
-    color: #656b78;
+            event.preventDefault();
 
-    font-size: 11px;
 
+            if (playing) {
+
+                pause();
+
+            } else {
+
+                play();
+            }
+        }
+
+
+        if (
+            event.key.toLowerCase() ===
+            "r"
+        ) {
+
+            restart();
+        }
+    }
+);
+
+
+/* =========================================================
+   CANVAS RESIZE
+========================================================= */
+
+function resizeCanvas() {
+
+    const rect =
+        canvas.getBoundingClientRect();
+
+
+    const dpr =
+        window.devicePixelRatio ||
+        1;
+
+
+    canvas.width =
+        Math.floor(
+            rect.width * dpr
+        );
+
+
+    canvas.height =
+        Math.floor(
+            rect.height * dpr
+        );
+
+
+    ctx.setTransform(
+        dpr,
+        0,
+        0,
+        dpr,
+        0,
+        0
+    );
+
+
+    draw();
 }
 
 
-kbd {
+window.addEventListener(
+    "resize",
+    resizeCanvas
+);
 
-    padding:
-        3px 6px;
 
-    border:
-        1px solid #303440;
+/* =========================================================
+   DRAW
+========================================================= */
 
-    border-radius: 5px;
+function draw() {
 
-    background:
-        #151820;
+    const width =
+        canvas.clientWidth;
 
-    color: #aaa;
+    const height =
+        canvas.clientHeight;
 
-    font-size: 9px;
 
+    ctx.clearRect(
+        0,
+        0,
+        width,
+        height
+    );
+
+
+    drawGrid(
+        width,
+        height
+    );
+
+
+    if (!tiles.length) {
+        return;
+    }
+
+
+    /*
+        Bounds.
+    */
+
+    let minX = Infinity;
+
+    let maxX = -Infinity;
+
+    let minY = Infinity;
+
+    let maxY = -Infinity;
+
+
+    for (
+        const tile of tiles
+    ) {
+
+        minX =
+            Math.min(
+                minX,
+                tile.x
+            );
+
+        maxX =
+            Math.max(
+                maxX,
+                tile.x
+            );
+
+        minY =
+            Math.min(
+                minY,
+                tile.y
+            );
+
+        maxY =
+            Math.max(
+                maxY,
+                tile.y
+            );
+    }
+
+
+    const pathWidth =
+        Math.max(
+            maxX - minX,
+            1
+        );
+
+
+    const pathHeight =
+        Math.max(
+            maxY - minY,
+            1
+        );
+
+
+    const padding = 80;
+
+
+    const scale =
+        Math.min(
+
+            (width - padding * 2) /
+            pathWidth,
+
+            (height - padding * 2) /
+            pathHeight
+
+        );
+
+
+    const centerX =
+        width / 2;
+
+
+    const centerY =
+        height / 2;
+
+
+    function screenX(x) {
+
+        return (
+            centerX +
+            x * scale
+        );
+    }
+
+
+    function screenY(y) {
+
+        return (
+            centerY +
+            y * scale
+        );
+    }
+
+
+    /*
+        Draw path.
+    */
+
+    ctx.beginPath();
+
+
+    for (
+        let i = 0;
+        i < tiles.length;
+        i++
+    ) {
+
+        const tile =
+            tiles[i];
+
+
+        const x =
+            screenX(tile.x);
+
+
+        const y =
+            screenY(tile.y);
+
+
+        if (i === 0) {
+
+            ctx.moveTo(
+                x,
+                y
+            );
+
+        } else {
+
+            ctx.lineTo(
+                x,
+                y
+            );
+        }
+    }
+
+
+    ctx.strokeStyle =
+        "rgba(255,255,255,.13)";
+
+    ctx.lineWidth = 2;
+
+    ctx.stroke();
+
+
+    /*
+        Draw tiles.
+    */
+
+    for (
+        let i = 0;
+        i < tiles.length;
+        i++
+    ) {
+
+        const tile =
+            tiles[i];
+
+
+        const x =
+            screenX(tile.x);
+
+
+        const y =
+            screenY(tile.y);
+
+
+        const current =
+            i === currentTileIndex;
+
+
+        const passed =
+            i < currentTileIndex;
+
+
+        /*
+            Current tile glow.
+        */
+
+        if (current) {
+
+            ctx.beginPath();
+
+            ctx.arc(
+                x,
+                y,
+                20,
+                0,
+                Math.PI * 2
+            );
+
+            ctx.fillStyle =
+                "rgba(255,255,255,.09)";
+
+            ctx.fill();
+
+
+            ctx.beginPath();
+
+            ctx.arc(
+                x,
+                y,
+                13 +
+                Math.sin(
+                    performance.now() /
+                    120
+                ) * 3,
+                0,
+                Math.PI * 2
+            );
+
+            ctx.strokeStyle =
+                "rgba(255,255,255,.7)";
+
+            ctx.lineWidth = 1.5;
+
+            ctx.stroke();
+        }
+
+
+        /*
+            Tile.
+        */
+
+        ctx.beginPath();
+
+        ctx.arc(
+            x,
+            y,
+            current ? 8 : 5,
+            0,
+            Math.PI * 2
+        );
+
+
+        if (current) {
+
+            ctx.fillStyle =
+                "white";
+
+        } else if (passed) {
+
+            ctx.fillStyle =
+                "rgba(255,255,255,.35)";
+
+        } else {
+
+            ctx.fillStyle =
+                "rgba(255,255,255,.72)";
+        }
+
+
+        ctx.fill();
+
+
+        /*
+            Numbers only for reasonably
+            sized levels.
+        */
+
+        if (
+            tiles.length <= 250
+        ) {
+
+            ctx.font =
+                "9px system-ui";
+
+            ctx.textAlign =
+                "center";
+
+            ctx.fillStyle =
+                "rgba(255,255,255,.3)";
+
+            ctx.fillText(
+                String(i + 1),
+                x,
+                y - 11
+            );
+        }
+    }
 }
 
 
-/* =========================================
-   MOBILE
-========================================= */
+/* =========================================================
+   GRID
+========================================================= */
 
-@media(max-width:700px) {
+function drawGrid(
+    width,
+    height
+) {
 
-    .topbar {
+    const size = 40;
 
-        padding:
-            0 15px;
 
+    ctx.save();
+
+
+    ctx.strokeStyle =
+        "rgba(255,255,255,.025)";
+
+    ctx.lineWidth = 1;
+
+
+    for (
+        let x = 0;
+        x < width;
+        x += size
+    ) {
+
+        ctx.beginPath();
+
+        ctx.moveTo(
+            x,
+            0
+        );
+
+        ctx.lineTo(
+            x,
+            height
+        );
+
+        ctx.stroke();
     }
 
 
-    .status {
+    for (
+        let y = 0;
+        y < height;
+        y += size
+    ) {
 
-        display: none;
+        ctx.beginPath();
 
+        ctx.moveTo(
+            0,
+            y
+        );
+
+        ctx.lineTo(
+            width,
+            y
+        );
+
+        ctx.stroke();
     }
 
 
-    .upload-card {
-
-        padding:
-            30px 20px;
-
-    }
-
-
-    .upload-card h1 {
-
-        font-size: 24px;
-
-    }
-
-
-    .player-screen {
-
-        padding:
-            90px 12px 30px;
-
-    }
-
-
-    .level-header {
-
-        align-items:
-            flex-start;
-
-        flex-direction:
-            column;
-
-    }
-
-
-    .level-header h1 {
-
-        font-size: 20px;
-
-    }
-
-
-    .game-container {
-
-        height: 55vh;
-
-    }
-
-
-    .controls {
-
-        gap: 6px;
-
-    }
-
-
-    .control-button {
-
-        min-width: 85px;
-
-    }
-
-
-    .play-button {
-
-        min-width: 110px;
-
-    }
-
-
-    .controls span {
-
-        display: none;
-
-    }
-
-
-    .keyboard-help {
-
-        display: none;
-
-    }
-
+    ctx.restore();
 }
+
+
+/* =========================================================
+   AUDIO STOP
+========================================================= */
+
+function stopAudio() {
+
+    try {
+
+        audioPlayer.pause();
+
+        audioPlayer.currentTime = 0;
+
+    } catch (error) {
+
+        console.warn(error);
+    }
+
+
+    if (audioUrl) {
+
+        URL.revokeObjectURL(
+            audioUrl
+        );
+
+        audioUrl = null;
+    }
+
+
+    audioPlayer.removeAttribute(
+        "src"
+    );
+
+    audioPlayer.load();
+
+
+    audioLabel.textContent =
+        "Audio: --";
+}
+
+
+/* =========================================================
+   HELPERS
+========================================================= */
+
+function isAudioFile(
+    filename
+) {
+
+    const name =
+        filename.toLowerCase();
+
+
+    return (
+        name.endsWith(".ogg") ||
+        name.endsWith(".mp3") ||
+        name.endsWith(".wav") ||
+        name.endsWith(".m4a") ||
+        name.endsWith(".aac") ||
+        name.endsWith(".flac")
+    );
+}
+
+
+function getFilename(
+    path
+) {
+
+    return path
+        .replace(/\\/g, "/")
+        .split("/")
+        .pop() || "";
+}
+
+
+function getFolder(
+    path
+) {
+
+    const normalized =
+        path.replace(
+            /\\/g,
+            "/"
+        );
+
+
+    const index =
+        normalized.lastIndexOf(
+            "/"
+        );
+
+
+    if (index === -1) {
+        return "";
+    }
+
+
+    return normalized.substring(
+        0,
+        index
+    );
+}
+
+
+function normalizePath(
+    path
+) {
+
+    return path
+        .replace(
+            /\\/g,
+            "/"
+        )
+        .replace(
+            /^\.?\//,
+            ""
+        )
+        .toLowerCase();
+}
+
+
+function normalizeAngle(
+    angle
+) {
+
+    angle %= 360;
+
+
+    if (angle < 0) {
+        angle += 360;
+    }
+
+
+    return angle;
+}
+
+
+function formatNumber(
+    number
+) {
+
+    return Number(number)
+        .toFixed(2)
+        .replace(
+            /\.00$/,
+            ""
+        );
+}
+
+
+function formatTime(
+    seconds
+) {
+
+    if (
+        !Number.isFinite(seconds) ||
+        seconds < 0
+    ) {
+
+        seconds = 0;
+    }
+
+
+    const minutes =
+        Math.floor(
+            seconds / 60
+        );
+
+
+    const secs =
+        Math.floor(
+            seconds % 60
+        );
+
+
+    return (
+        minutes +
+        ":" +
+        String(secs)
+            .padStart(
+                2,
+                "0"
+            )
+    );
+}
+
+
+function formatTimeDetailed(
+    seconds
+) {
+
+    if (
+        !Number.isFinite(seconds) ||
+        seconds < 0
+    ) {
+
+        seconds = 0;
+    }
+
+
+    const minutes =
+        Math.floor(
+            seconds / 60
+        );
+
+
+    const secs =
+        Math.floor(
+            seconds % 60
+        );
+
+
+    const milliseconds =
+        Math.floor(
+            (seconds % 1) *
+            1000
+        );
+
+
+    return (
+        minutes +
+        ":" +
+        String(secs)
+            .padStart(
+                2,
+                "0"
+            ) +
+        "." +
+        String(milliseconds)
+            .padStart(
+                3,
+                "0"
+            )
+    );
+}
+
+
+function escapeHtml(
+    value
+) {
+
+    return String(value)
+        .replace(
+            /&/g,
+            "&amp;"
+        )
+        .replace(
+            /</g,
+            "&lt;"
+        )
+        .replace(
+            />/g,
+            "&gt;"
+        )
+        .replace(
+            /"/g,
+            "&quot;"
+        )
+        .replace(
+            /'/g,
+            "&#039;"
+        );
+}
+
+
+/* =========================================================
+   INITIALIZE
+========================================================= */
+
+resizeCanvas();
