@@ -1,2761 +1,1429 @@
-"use strict";
-
-
 /* =========================================================
    ADOFAI WEB PLAYER
-   =========================================================
-
-   Features:
-
-   - .adofai loading
-   - ZIP loading
-   - Multiple levels inside ZIP
-   - Automatic audio detection
-   - Browser Blob URLs
-   - Canvas path rendering
-   - BPM timing
-   - Audio synchronization
-   - Play / pause / restart
-   - Timeline seeking
-   - Playback speed
-========================================================= */
-
-
-/* =========================================================
-   DOM
-========================================================= */
-
-const fileInput =
-    document.getElementById("fileInput");
-
-const dropZone =
-    document.getElementById("dropZone");
-
-const uploadScreen =
-    document.getElementById("uploadScreen");
-
-const levelSelectScreen =
-    document.getElementById("levelSelectScreen");
-
-const playerScreen =
-    document.getElementById("playerScreen");
-
-const levelList =
-    document.getElementById("levelList");
-
-const loadSelectedButton =
-    document.getElementById(
-        "loadSelectedButton"
-    );
-
-const backToUploadButton =
-    document.getElementById(
-        "backToUploadButton"
-    );
-
-const newLevelButton =
-    document.getElementById(
-        "newLevelButton"
-    );
-
-const levelName =
-    document.getElementById(
-        "levelName"
-    );
-
-const bpmLabel =
-    document.getElementById(
-        "bpmLabel"
-    );
-
-const tileLabel =
-    document.getElementById(
-        "tileLabel"
-    );
-
-const offsetLabel =
-    document.getElementById(
-        "offsetLabel"
-    );
-
-const audioLabel =
-    document.getElementById(
-        "audioLabel"
-    );
-
-const statusDot =
-    document.getElementById(
-        "statusDot"
-    );
-
-const statusText =
-    document.getElementById(
-        "statusText"
-    );
-
-const canvas =
-    document.getElementById(
-        "gameCanvas"
-    );
-
-const ctx =
-    canvas.getContext("2d");
-
-const playButton =
-    document.getElementById(
-        "playButton"
-    );
-
-const pauseButton =
-    document.getElementById(
-        "pauseButton"
-    );
-
-const restartButton =
-    document.getElementById(
-        "restartButton"
-    );
-
-const timeline =
-    document.getElementById(
-        "timeline"
-    );
-
-const timeCurrent =
-    document.getElementById(
-        "timeCurrent"
-    );
-
-const timeTotal =
-    document.getElementById(
-        "timeTotal"
-    );
-
-const currentTile =
-    document.getElementById(
-        "currentTile"
-    );
-
-const currentTime =
-    document.getElementById(
-        "currentTime"
-    );
-
-const speedSlider =
-    document.getElementById(
-        "speedSlider"
-    );
-
-const speedValue =
-    document.getElementById(
-        "speedValue"
-    );
-
-const beatCircle =
-    document.getElementById(
-        "beatCircle"
-    );
-
-
-/* =========================================================
-   STATE
-========================================================= */
-
-let level = null;
-
-let tiles = [];
-
-let bpm = 100;
-
-let offset = 0;
-
-let totalDuration = 0;
-
-let currentTimeSeconds = 0;
-
-let currentTileIndex = 0;
-
-let playing = false;
-
-let playbackSpeed = 1;
-
-let animationFrame = null;
-
-let lastAnimationTime = 0;
-
-let lastBeatIndex = -1;
-
-
-/*
-    Audio element.
-
-    The audio file extracted from the ZIP
-    gets converted into a browser Blob URL.
-*/
-
-let audioPlayer =
-    new Audio();
-
-audioPlayer.preload =
-    "auto";
-
-
-/*
-    Current audio Blob URL.
-*/
-
-let audioUrl = null;
-
-
-/*
-    Files extracted from ZIP.
-*/
-
-let zipFiles = {};
-
-
-/*
-    Levels discovered inside ZIP.
-*/
-
-let availableLevels = [];
-
-
-/*
-    Currently selected ZIP level.
-*/
-
-let selectedLevelIndex = 0;
-
-
-/* =========================================================
-   FILE INPUT
-========================================================= */
-
-fileInput.addEventListener(
-    "change",
-    event => {
-
-        const file =
-            event.target.files[0];
-
-        if (!file) {
-            return;
-        }
-
-        loadFile(file);
-    }
-);
-
-
-/* =========================================================
-   DRAG AND DROP
-========================================================= */
-
-dropZone.addEventListener(
-    "dragover",
-    event => {
-
-        event.preventDefault();
-
-        dropZone.classList.add(
-            "dragging"
-        );
-    }
-);
-
-
-dropZone.addEventListener(
-    "dragleave",
-    () => {
-
-        dropZone.classList.remove(
-            "dragging"
-        );
-    }
-);
-
-
-dropZone.addEventListener(
-    "drop",
-    event => {
-
-        event.preventDefault();
-
-        dropZone.classList.remove(
-            "dragging"
+   ========================================================= */
+
+* {
+    box-sizing: border-box;
+}
+
+html,
+body {
+    margin: 0;
+    width: 100%;
+    height: 100%;
+}
+
+body {
+    background:
+        radial-gradient(
+            circle at 50% 0%,
+            #202635 0%,
+            #0c0e14 42%,
+            #06070a 100%
         );
 
-        const file =
-            event.dataTransfer.files[0];
+    color: #f5f7fa;
 
-        if (file) {
-            loadFile(file);
-        }
-    }
-);
+    font-family:
+        Inter,
+        ui-sans-serif,
+        system-ui,
+        -apple-system,
+        BlinkMacSystemFont,
+        "Segoe UI",
+        sans-serif;
 
-
-/* =========================================================
-   MAIN FILE LOADER
-========================================================= */
-
-async function loadFile(file) {
-
-    try {
-
-        statusText.textContent =
-            "Loading...";
-
-
-        /*
-            ADOFAI
-        */
-
-        if (
-            file.name
-                .toLowerCase()
-                .endsWith(".adofai")
-        ) {
-
-            await loadAdoFAIFile(file);
-
-            return;
-        }
-
-
-        /*
-            ZIP
-        */
-
-        if (
-            file.name
-                .toLowerCase()
-                .endsWith(".zip")
-        ) {
-
-            await loadZipFile(file);
-
-            return;
-        }
-
-
-        throw new Error(
-            "Please select an .adofai or .zip file."
-        );
-
-
-    } catch (error) {
-
-        console.error(error);
-
-        statusText.textContent =
-            "Error";
-
-        alert(
-            "Could not load this file.\n\n" +
-            error.message
-        );
-    }
+    overflow: hidden;
 }
 
 
 /* =========================================================
-   LOAD DIRECT ADOFAI
-========================================================= */
+   VARIABLES
+   ========================================================= */
 
-async function loadAdoFAIFile(file) {
+:root {
 
-    const text =
-        await file.text();
+    --background: #07080c;
 
+    --panel: rgba(17, 20, 29, 0.88);
 
-    const data =
-        JSON.parse(text);
+    --panel-solid: #11141d;
 
+    --panel-light: #191d28;
 
-    /*
-        Clear ZIP assets.
-    */
+    --border: rgba(255,255,255,0.10);
 
-    zipFiles = {};
+    --border-light: rgba(255,255,255,0.17);
 
-    availableLevels = [];
+    --text: #f5f7fa;
 
+    --muted: #858c9b;
 
-    /*
-        Parse.
-    */
+    --muted2: #626978;
 
-    await prepareLevel(
-        data,
-        file.name,
-        null
-    );
+    --white: #ffffff;
+
+    --fire: #ff7657;
+
+    --ice: #67d9ff;
+
+    --purple: #b68cff;
+
 }
 
 
 /* =========================================================
-   LOAD ZIP
-========================================================= */
+   UTILITIES
+   ========================================================= */
 
-async function loadZipFile(file) {
-
-    if (
-        typeof JSZip ===
-        "undefined"
-    ) {
-
-        throw new Error(
-            "JSZip failed to load. " +
-            "Check your internet connection."
-        );
-    }
-
-
-    const zip =
-        await JSZip.loadAsync(file);
-
-
-    zipFiles = {};
-
-
-    /*
-        Extract every file.
-
-        Directories are ignored.
-    */
-
-    for (
-        const entry of
-        Object.values(zip.files)
-    ) {
-
-        if (entry.dir) {
-            continue;
-        }
-
-
-        zipFiles[entry.name] =
-            await entry.async("blob");
-    }
-
-
-    /*
-        Find ADOFAI files.
-    */
-
-    const adofaiNames =
-        Object.keys(zipFiles)
-            .filter(name =>
-                name
-                    .toLowerCase()
-                    .endsWith(".adofai")
-            );
-
-
-    if (!adofaiNames.length) {
-
-        throw new Error(
-            "The ZIP does not contain an .adofai file."
-        );
-    }
-
-
-    /*
-        Parse every level.
-
-        This lets us display a level selector.
-    */
-
-    availableLevels = [];
-
-
-    for (
-        const filename of
-        adofaiNames
-    ) {
-
-        try {
-
-            const blob =
-                zipFiles[filename];
-
-
-            const text =
-                await blob.text();
-
-
-            const data =
-                JSON.parse(text);
-
-
-            const settings =
-                data.settings || {};
-
-
-            const name =
-                settings.song ||
-                settings.levelDesc ||
-                getFilename(filename);
-
-
-            availableLevels.push({
-
-                filename,
-
-                name,
-
-                data
-
-            });
-
-
-        } catch (error) {
-
-            console.warn(
-                "Could not parse:",
-                filename,
-                error
-            );
-        }
-    }
-
-
-    if (!availableLevels.length) {
-
-        throw new Error(
-            "No valid ADOFAI levels were found."
-        );
-    }
-
-
-    /*
-        One level = load immediately.
-
-        Multiple levels = selector.
-    */
-
-    if (
-        availableLevels.length === 1
-    ) {
-
-        await prepareLevel(
-
-            availableLevels[0].data,
-
-            availableLevels[0].filename,
-
-            zipFiles
-
-        );
-
-    } else {
-
-        showLevelSelector();
-    }
+.hidden {
+    display: none !important;
 }
 
 
 /* =========================================================
-   LEVEL SELECTOR
-========================================================= */
+   TOP BAR
+   ========================================================= */
 
-function showLevelSelector() {
+.topbar {
 
-    uploadScreen.classList.add(
-        "hidden"
-    );
+    position: fixed;
 
-    playerScreen.classList.add(
-        "hidden"
-    );
+    top: 0;
+    left: 0;
 
-    levelSelectScreen.classList.remove(
-        "hidden"
-    );
+    width: 100%;
 
+    height: 72px;
 
-    selectedLevelIndex = 0;
+    z-index: 100;
 
+    display: flex;
 
-    renderLevelList();
-}
+    align-items: center;
 
+    justify-content: space-between;
 
-function renderLevelList() {
+    padding: 0 28px;
 
-    levelList.innerHTML = "";
+    background:
+        rgba(6,7,10,0.78);
 
+    backdrop-filter:
+        blur(20px);
 
-    availableLevels.forEach(
-        (entry, index) => {
+    -webkit-backdrop-filter:
+        blur(20px);
 
-            const option =
-                document.createElement(
-                    "div"
-                );
-
-
-            option.className =
-                "level-option";
-
-
-            if (
-                index ===
-                selectedLevelIndex
-            ) {
-
-                option.classList.add(
-                    "selected"
-                );
-            }
-
-
-            option.innerHTML = `
-
-                <div class="level-radio"></div>
-
-                <div>
-
-                    <div class="level-option-title">
-                        ${escapeHtml(entry.name)}
-                    </div>
-
-                    <div class="level-option-file">
-                        ${escapeHtml(entry.filename)}
-                    </div>
-
-                </div>
-
-            `;
-
-
-            option.addEventListener(
-                "click",
-                () => {
-
-                    selectedLevelIndex =
-                        index;
-
-                    renderLevelList();
-                }
-            );
-
-
-            levelList.appendChild(
-                option
-            );
-        }
-    );
-}
-
-
-loadSelectedButton.addEventListener(
-    "click",
-    async () => {
-
-        const entry =
-            availableLevels[
-                selectedLevelIndex
-            ];
-
-
-        if (!entry) {
-            return;
-        }
-
-
-        try {
-
-            statusText.textContent =
-                "Loading level...";
-
-
-            await prepareLevel(
-
-                entry.data,
-
-                entry.filename,
-
-                zipFiles
-
-            );
-
-        } catch (error) {
-
-            console.error(error);
-
-            alert(
-                "Could not load this level.\n\n" +
-                error.message
-            );
-        }
-    }
-);
-
-
-/* =========================================================
-   PREPARE LEVEL
-========================================================= */
-
-async function prepareLevel(
-    data,
-    filename,
-    assets
-) {
-
-    if (
-        !data ||
-        typeof data !== "object"
-    ) {
-
-        throw new Error(
-            "Invalid ADOFAI level."
-        );
-    }
-
-
-    level = data;
-
-
-    const settings =
-        data.settings || {};
-
-
-    /*
-        BPM
-    */
-
-    bpm =
-        Number(settings.bpm);
-
-
-    if (
-        !Number.isFinite(bpm) ||
-        bpm <= 0
-    ) {
-
-        bpm = 100;
-    }
-
-
-    /*
-        Offset
-
-        Usually milliseconds.
-    */
-
-    offset =
-        Number(settings.offset);
-
-
-    if (
-        !Number.isFinite(offset)
-    ) {
-
-        offset = 0;
-    }
-
-
-    /*
-        AngleData
-    */
-
-    const angleData =
-        Array.isArray(data.angleData)
-            ? data.angleData
-            : [];
-
-
-    if (!angleData.length) {
-
-        throw new Error(
-            "This level does not contain angleData."
-        );
-    }
-
-
-    /*
-        Build path.
-    */
-
-    tiles =
-        buildTilePath(
-            angleData
-        );
-
-
-    /*
-        Calculate timing.
-    */
-
-    calculateTiming();
-
-
-    /*
-        Reset audio.
-    */
-
-    stopAudio();
-
-
-    /*
-        Find audio.
-    */
-
-    let audioName =
-        null;
-
-
-    if (assets) {
-
-        audioName =
-            findAudioForLevel(
-                data,
-                filename,
-                assets
-            );
-    }
-
-
-    /*
-        Load audio.
-    */
-
-    if (audioName) {
-
-        await loadAudioBlob(
-            assets[audioName],
-            audioName
-        );
-
-    } else {
-
-        audioLabel.textContent =
-            "Audio: none";
-
-        console.warn(
-            "No audio file found."
-        );
-    }
-
-
-    /*
-        Name.
-    */
-
-    const displayName =
-        settings.song ||
-        settings.levelDesc ||
-        getFilename(filename);
-
-
-    levelName.textContent =
-        displayName || "Untitled Level";
-
-
-    bpmLabel.textContent =
-        "BPM: " +
-        formatNumber(bpm);
-
-
-    tileLabel.textContent =
-        "Tiles: " +
-        tiles.length;
-
-
-    offsetLabel.textContent =
-        "Offset: " +
-        formatNumber(offset) +
-        " ms";
-
-
-    /*
-        Reset playback.
-    */
-
-    currentTimeSeconds = 0;
-
-    currentTileIndex = 0;
-
-    playing = false;
-
-    lastBeatIndex = -1;
-
-
-    /*
-        Show player.
-    */
-
-    levelSelectScreen.classList.add(
-        "hidden"
-    );
-
-    uploadScreen.classList.add(
-        "hidden"
-    );
-
-    playerScreen.classList.remove(
-        "hidden"
-    );
-
-
-    statusDot.classList.add(
-        "ready"
-    );
-
-    statusText.textContent =
-        "Level loaded";
-
-
-    resizeCanvas();
-
-    updateUI();
-
-    draw();
+    border-bottom:
+        1px solid var(--border);
 }
 
 
 /* =========================================================
-   FIND AUDIO
-========================================================= */
+   BRAND
+   ========================================================= */
 
-function findAudioForLevel(
-    data,
-    levelFilename,
-    assets
-) {
+.brand {
 
-    const settings =
-        data.settings || {};
+    display: flex;
 
+    align-items: center;
 
-    /*
-        Possible audio setting names.
-    */
-
-    const requested =
-        settings.songFilename ||
-        settings.songFile ||
-        settings.musicFilename ||
-        "";
+    gap: 12px;
+}
 
 
-    const assetNames =
-        Object.keys(assets);
+.brand-icon {
+
+    position: relative;
+
+    width: 36px;
+
+    height: 36px;
+}
 
 
-    /*
-        Exact filename match.
-    */
+.planet {
 
-    if (requested) {
+    position: absolute;
 
-        const exact =
-            assetNames.find(
-                name =>
-                    normalizePath(name) ===
-                    normalizePath(requested)
-            );
+    width: 17px;
+    height: 17px;
 
+    border-radius: 50%;
 
-        if (exact) {
-            return exact;
-        }
+    border: 2px solid white;
+}
 
 
-        /*
-            Sometimes the setting contains
-            only the filename.
-        */
+.planet.fire {
 
-        const basename =
-            getFilename(requested);
+    left: 0;
+    top: 9px;
 
-
-        const byBasename =
-            assetNames.find(
-                name =>
-                    getFilename(name)
-                        .toLowerCase() ===
-                    basename.toLowerCase()
-            );
-
-
-        if (byBasename) {
-            return byBasename;
-        }
-    }
-
-
-    /*
-        Search for audio files.
-    */
-
-    const audioFiles =
-        assetNames.filter(
-            name =>
-                isAudioFile(name)
+    background:
+        radial-gradient(
+            circle at 35% 30%,
+            #fff 0%,
+            #ff9c7f 15%,
+            #ff5338 55%,
+            #a71914 100%
         );
 
-
-    if (!audioFiles.length) {
-        return null;
-    }
-
-
-    /*
-        Try to find an audio file
-        in the same folder as the level.
-    */
-
-    const levelFolder =
-        getFolder(levelFilename);
+    box-shadow:
+        0 0 15px
+        rgba(255,83,56,.55);
+}
 
 
-    const sameFolder =
-        audioFiles.find(
-            name =>
-                getFolder(name) ===
-                levelFolder
+.planet.ice {
+
+    right: 0;
+    top: 2px;
+
+    background:
+        radial-gradient(
+            circle at 35% 30%,
+            white 0%,
+            #8cecff 20%,
+            #2a9fce 65%,
+            #17536f 100%
         );
 
-
-    if (sameFolder) {
-        return sameFolder;
-    }
-
-
-    /*
-        Try matching the level filename.
-    */
-
-    const levelBase =
-        getFilename(
-            levelFilename
-        )
-            .replace(
-                /\.adofai$/i,
-                ""
-            )
-            .toLowerCase();
+    box-shadow:
+        0 0 15px
+        rgba(70,205,255,.5);
+}
 
 
-    const matching =
-        audioFiles.find(
-            name => {
+.brand-title {
 
-                const audioBase =
-                    getFilename(name)
-                        .replace(
-                            /\.[^.]+$/,
-                            ""
-                        )
-                        .toLowerCase();
+    font-size: 15px;
+
+    font-weight: 800;
+
+    letter-spacing: 3px;
+}
 
 
-                return (
-                    audioBase ===
-                    levelBase
-                );
-            }
-        );
+.brand-subtitle {
+
+    margin-top: 2px;
+
+    color: var(--muted);
+
+    font-size: 8px;
+
+    letter-spacing: 2px;
+}
 
 
-    if (matching) {
-        return matching;
-    }
+.connection-status {
+
+    display: flex;
+
+    align-items: center;
+
+    gap: 8px;
+
+    color: var(--muted);
+
+    font-size: 11px;
+}
 
 
-    /*
-        Otherwise use the first
-        supported audio file.
-    */
+.status-dot {
 
-    return audioFiles[0];
+    width: 7px;
+    height: 7px;
+
+    border-radius: 50%;
+
+    background: #555;
+
+    transition:
+        background .2s,
+        box-shadow .2s;
+}
+
+
+.status-dot.ready {
+
+    background: #72ffad;
+
+    box-shadow:
+        0 0 12px
+        rgba(114,255,173,.7);
 }
 
 
 /* =========================================================
-   AUDIO LOADING
-========================================================= */
+   SCREENS
+   ========================================================= */
 
-async function loadAudioBlob(
-    blob,
-    filename
-) {
+.screen {
 
-    if (!blob) {
-        return;
-    }
-
-
-    /*
-        Release previous Blob URL.
-    */
-
-    if (audioUrl) {
-
-        URL.revokeObjectURL(
-            audioUrl
-        );
-
-        audioUrl = null;
-    }
-
-
-    /*
-        Create a browser URL.
-
-        This is what allows the browser
-        to play the extracted ZIP audio.
-    */
-
-    audioUrl =
-        URL.createObjectURL(
-            blob
-        );
-
-
-    audioPlayer.pause();
-
-    audioPlayer.src =
-        audioUrl;
-
-    audioPlayer.currentTime =
-        0;
-
-    audioPlayer.playbackRate =
-        playbackSpeed;
-
-    audioPlayer.load();
-
-
-    audioLabel.textContent =
-        "Audio: " +
-        getFilename(filename);
-
-
-    /*
-        Wait until metadata is available.
-    */
-
-    await new Promise(
-        resolve => {
-
-            if (
-                audioPlayer.readyState >=
-                1
-            ) {
-
-                resolve();
-
-                return;
-            }
-
-
-            const done = () => {
-
-                audioPlayer.removeEventListener(
-                    "loadedmetadata",
-                    done
-                );
-
-                resolve();
-            };
-
-
-            audioPlayer.addEventListener(
-                "loadedmetadata",
-                done
-            );
-
-
-            /*
-                Don't wait forever.
-            */
-
-            setTimeout(
-                resolve,
-                2500
-            );
-        }
-    );
-
-
-    /*
-        If the audio is longer than
-        our calculated level duration,
-        use the audio duration.
-    */
-
-    if (
-        Number.isFinite(
-            audioPlayer.duration
-        ) &&
-        audioPlayer.duration > 0
-    ) {
-
-        totalDuration =
-            Math.max(
-                totalDuration,
-                audioPlayer.duration
-            );
-    }
+    width: 100%;
+    height: 100%;
 }
 
 
 /* =========================================================
-   AUDIO EVENTS
-========================================================= */
+   UPLOAD SCREEN
+   ========================================================= */
 
-audioPlayer.addEventListener(
-    "ended",
-    () => {
+.upload-screen {
 
-        playing = false;
+    display: flex;
 
-        currentTimeSeconds =
-            Math.min(
-                audioPlayer.duration ||
-                totalDuration,
-                totalDuration
-            );
+    align-items: center;
 
-        updateCurrentTile();
+    justify-content: center;
 
-        updateUI();
-
-        draw();
-    }
-);
+    padding:
+        90px 20px 30px;
+}
 
 
-audioPlayer.addEventListener(
-    "error",
-    () => {
+.upload-card {
 
-        console.warn(
-            "Browser could not play this audio."
+    position: relative;
+
+    width:
+        min(650px, 100%);
+
+    padding: 52px 48px;
+
+    text-align: center;
+
+    background:
+        linear-gradient(
+            145deg,
+            rgba(26,30,42,.95),
+            rgba(11,13,19,.95)
         );
 
-        audioLabel.textContent =
-            "Audio: unsupported";
-    }
-);
+    border:
+        1px solid var(--border-light);
 
+    border-radius: 24px;
 
-/* =========================================================
-   TILE PATH
-========================================================= */
+    box-shadow:
+        0 40px 100px
+        rgba(0,0,0,.55),
 
-function buildTilePath(
-    angleData
-) {
+        inset 0 1px
+        rgba(255,255,255,.05);
 
-    const result = [];
-
-
-    let x = 0;
-
-    let y = 0;
-
-
-    /*
-        Distance between visual tiles.
-
-        The value is intentionally small because
-        the entire path is scaled to the canvas.
-    */
-
-    const distance = 1;
-
-
-    for (
-        let i = 0;
-        i < angleData.length;
-        i++
-    ) {
-
-        let angle =
-            Number(
-                angleData[i]
-            );
-
-
-        if (
-            !Number.isFinite(angle)
-        ) {
-
-            angle = 0;
-        }
-
-
-        angle =
-            normalizeAngle(angle);
-
-
-        if (i > 0) {
-
-            const radians =
-                angle *
-                Math.PI /
-                180;
-
-
-            x +=
-                Math.cos(radians) *
-                distance;
-
-
-            y -=
-                Math.sin(radians) *
-                distance;
-        }
-
-
-        result.push({
-
-            index: i,
-
-            angle,
-
-            x,
-
-            y,
-
-            time: 0
-
-        });
-    }
-
-
-    /*
-        Center the level.
-    */
-
-    if (result.length) {
-
-        let minX = Infinity;
-
-        let maxX = -Infinity;
-
-        let minY = Infinity;
-
-        let maxY = -Infinity;
-
-
-        for (
-            const tile of result
-        ) {
-
-            minX =
-                Math.min(
-                    minX,
-                    tile.x
-                );
-
-            maxX =
-                Math.max(
-                    maxX,
-                    tile.x
-                );
-
-            minY =
-                Math.min(
-                    minY,
-                    tile.y
-                );
-
-            maxY =
-                Math.max(
-                    maxY,
-                    tile.y
-                );
-        }
-
-
-        const centerX =
-            (minX + maxX) / 2;
-
-
-        const centerY =
-            (minY + maxY) / 2;
-
-
-        for (
-            const tile of result
-        ) {
-
-            tile.x -= centerX;
-
-            tile.y -= centerY;
-        }
-    }
-
-
-    return result;
+    overflow: hidden;
 }
 
 
-/* =========================================================
-   TIMING
-========================================================= */
+.upload-card::before {
 
-function calculateTiming() {
+    content: "";
 
-    if (!tiles.length) {
+    position: absolute;
 
-        totalDuration = 0;
+    width: 350px;
+    height: 350px;
 
-        return;
-    }
+    top: -200px;
+    left: 50%;
 
+    transform:
+        translateX(-50%);
 
-    const beatDuration =
-        60 / bpm;
-
-
-    for (
-        let i = 0;
-        i < tiles.length;
-        i++
-    ) {
-
-        tiles[i].time =
-            i *
-            beatDuration;
-    }
-
-
-    totalDuration =
-        tiles.length *
-        beatDuration;
-}
-
-
-/* =========================================================
-   PLAY
-========================================================= */
-
-async function play() {
-
-    if (
-        !level ||
-        !tiles.length
-    ) {
-
-        return;
-    }
-
-
-    if (playing) {
-        return;
-    }
-
-
-    /*
-        If at the end,
-        restart.
-    */
-
-    if (
-        currentTimeSeconds >=
-        totalDuration
-    ) {
-
-        currentTimeSeconds = 0;
-
-        if (audioPlayer.src) {
-            audioPlayer.currentTime = 0;
-        }
-    }
-
-
-    playing = true;
-
-
-    /*
-        Audio is the master clock.
-    */
-
-    if (audioPlayer.src) {
-
-        audioPlayer.currentTime =
-            Math.max(
-                0,
-                currentTimeSeconds
-            );
-
-
-        audioPlayer.playbackRate =
-            playbackSpeed;
-
-
-        try {
-
-            await audioPlayer.play();
-
-        } catch (error) {
-
-            console.warn(
-                "Audio playback failed:",
-                error
-            );
-        }
-
-    }
-
-
-    lastAnimationTime =
-        performance.now();
-
-
-    animationFrame =
-        requestAnimationFrame(
-            animationLoop
-        );
-}
-
-
-/* =========================================================
-   PAUSE
-========================================================= */
-
-function pause() {
-
-    playing = false;
-
-
-    audioPlayer.pause();
-
-
-    if (animationFrame) {
-
-        cancelAnimationFrame(
-            animationFrame
+    background:
+        radial-gradient(
+            circle,
+            rgba(255,90,60,.13),
+            transparent 70%
         );
 
-        animationFrame = null;
-    }
-
-
-    updateUI();
+    pointer-events: none;
 }
 
 
-/* =========================================================
-   RESTART
-========================================================= */
+.upload-logo {
 
-function restart() {
+    position: relative;
 
-    pause();
+    width: 90px;
+    height: 70px;
 
-
-    currentTimeSeconds = 0;
-
-    currentTileIndex = 0;
-
-    lastBeatIndex = -1;
-
-
-    if (audioPlayer.src) {
-
-        audioPlayer.currentTime = 0;
-    }
-
-
-    updateUI();
-
-    draw();
+    margin:
+        0 auto 30px;
 }
 
 
-/* =========================================================
-   ANIMATION
-========================================================= */
+.orb {
 
-function animationLoop(now) {
+    position: absolute;
 
-    if (!playing) {
-        return;
-    }
+    width: 48px;
+    height: 48px;
 
+    border-radius: 50%;
 
-    /*
-        Audio clock.
-
-        This is much more accurate than simply
-        adding frame deltas because the browser
-        audio engine maintains its own clock.
-    */
-
-    if (
-        audioPlayer.src &&
-        !audioPlayer.paused &&
-        Number.isFinite(
-            audioPlayer.currentTime
-        )
-    ) {
-
-        currentTimeSeconds =
-            audioPlayer.currentTime;
-
-    } else {
-
-        /*
-            Fallback clock.
-
-            This allows levels without audio
-            to still be visualized.
-        */
-
-        const delta =
-            (
-                now -
-                lastAnimationTime
-            ) / 1000;
+    border:
+        2px solid white;
+}
 
 
-        lastAnimationTime =
-            now;
+.orb-fire {
 
+    left: 2px;
+    bottom: 0;
 
-        currentTimeSeconds +=
-            delta *
-            playbackSpeed;
-    }
-
-
-    /*
-        Stop at level end.
-    */
-
-    if (
-        currentTimeSeconds >=
-        totalDuration
-    ) {
-
-        currentTimeSeconds =
-            totalDuration;
-
-
-        playing = false;
-
-
-        audioPlayer.pause();
-
-
-        updateCurrentTile();
-
-        updateUI();
-
-        draw();
-
-        return;
-    }
-
-
-    updateCurrentTile();
-
-    updateBeat();
-
-    updateUI();
-
-    draw();
-
-
-    animationFrame =
-        requestAnimationFrame(
-            animationLoop
+    background:
+        radial-gradient(
+            circle at 30% 25%,
+            #fff,
+            #ffae8c 18%,
+            #ff5538 50%,
+            #87130f 100%
         );
+
+    box-shadow:
+        0 0 30px
+        rgba(255,82,55,.45);
+}
+
+
+.orb-ice {
+
+    right: 2px;
+    top: 0;
+
+    background:
+        radial-gradient(
+            circle at 30% 25%,
+            #fff,
+            #b0f5ff 18%,
+            #37bce9 50%,
+            #15516e 100%
+        );
+
+    box-shadow:
+        0 0 30px
+        rgba(55,188,233,.4);
+}
+
+
+.small-label {
+
+    color: var(--muted);
+
+    font-size: 9px;
+
+    font-weight: 700;
+
+    letter-spacing: 3px;
+}
+
+
+.upload-card h1 {
+
+    margin:
+        10px 0 15px;
+
+    font-size:
+        clamp(30px, 5vw, 46px);
+
+    line-height: 1.05;
+
+    letter-spacing: -2px;
+}
+
+
+.upload-card h1 span {
+
+    display: block;
+
+    color: #8e96a7;
+}
+
+
+.description {
+
+    width:
+        min(500px, 100%);
+
+    margin:
+        0 auto 30px;
+
+    color: var(--muted);
+
+    font-size: 14px;
+
+    line-height: 1.7;
+}
+
+
+.description strong {
+
+    color: white;
 }
 
 
 /* =========================================================
-   CURRENT TILE
-========================================================= */
+   UPLOAD BUTTON
+   ========================================================= */
 
-function updateCurrentTile() {
+.upload-button {
 
-    if (!tiles.length) {
-        return;
-    }
+    position: relative;
 
+    display: inline-flex;
 
-    let index = 0;
+    align-items: center;
 
+    justify-content: center;
 
-    for (
-        let i = 0;
-        i < tiles.length;
-        i++
-    ) {
+    gap: 10px;
 
-        if (
-            tiles[i].time <=
-            currentTimeSeconds
-        ) {
+    padding:
+        14px 24px;
 
-            index = i;
+    border-radius: 11px;
 
-        } else {
-
-            break;
-        }
-    }
-
-
-    currentTileIndex =
-        Math.min(
-            index,
-            tiles.length - 1
+    background:
+        linear-gradient(
+            135deg,
+            #ffffff,
+            #dfe4ec
         );
+
+    color: #08090c;
+
+    font-weight: 800;
+
+    cursor: pointer;
+
+    box-shadow:
+        0 8px 25px
+        rgba(255,255,255,.10);
+
+    transition:
+        transform .2s,
+        box-shadow .2s;
+}
+
+
+.upload-button:hover {
+
+    transform:
+        translateY(-2px);
+
+    box-shadow:
+        0 12px 35px
+        rgba(255,255,255,.18);
+}
+
+
+.upload-button-icon {
+
+    font-size: 20px;
+
+    font-weight: 300;
+}
+
+
+/* =========================================================
+   DROP ZONE
+   ========================================================= */
+
+.drop-zone {
+
+    display: flex;
+
+    flex-direction: column;
+
+    align-items: center;
+
+    justify-content: center;
+
+    gap: 8px;
+
+    min-height: 110px;
+
+    margin-top: 22px;
+
+    padding: 20px;
+
+    border:
+        1px dashed
+        rgba(255,255,255,.16);
+
+    border-radius: 14px;
+
+    color: var(--muted);
+
+    font-size: 12px;
+
+    background:
+        rgba(255,255,255,.015);
+
+    transition:
+        border-color .2s,
+        background .2s,
+        transform .2s;
+}
+
+
+.drop-zone.dragging {
+
+    border-color:
+        white;
+
+    background:
+        rgba(255,255,255,.07);
+
+    transform:
+        scale(1.01);
+}
+
+
+.drop-zone strong {
+
+    color: white;
+}
+
+
+.drop-icon {
+
+    font-size: 24px;
+
+    color: #aab1c0;
+}
+
+
+/* =========================================================
+   FORMAT TAGS
+   ========================================================= */
+
+.format-list {
+
+    display: flex;
+
+    justify-content: center;
+
+    flex-wrap: wrap;
+
+    gap: 7px;
+
+    margin-top: 18px;
+}
+
+
+.format-list span {
+
+    padding:
+        5px 8px;
+
+    border:
+        1px solid var(--border);
+
+    border-radius: 6px;
+
+    color: #777f8e;
+
+    font-size: 8px;
+
+    font-weight: 700;
+
+    letter-spacing: 1px;
+}
+
+
+/* =========================================================
+   CENTERED PANELS
+   ========================================================= */
+
+.centered-screen {
+
+    display: flex;
+
+    align-items: center;
+
+    justify-content: center;
+
+    padding:
+        100px 20px 30px;
+}
+
+
+.panel {
+
+    width:
+        min(680px, 100%);
+
+    max-height:
+        calc(100vh - 130px);
+
+    overflow-y: auto;
+
+    padding: 35px;
+
+    background:
+        var(--panel);
+
+    backdrop-filter:
+        blur(20px);
+
+    border:
+        1px solid var(--border-light);
+
+    border-radius: 18px;
+
+    box-shadow:
+        0 30px 80px
+        rgba(0,0,0,.45);
+}
+
+
+.panel h2 {
+
+    margin:
+        8px 0;
+
+    font-size: 30px;
+}
+
+
+.panel-description {
+
+    color: var(--muted);
+
+    font-size: 13px;
+
+    line-height: 1.5;
+}
+
+
+/* =========================================================
+   LEVEL LIST
+   ========================================================= */
+
+.level-list {
+
+    margin:
+        25px 0;
+}
+
+
+.level-option {
+
+    display: flex;
+
+    align-items: center;
+
+    gap: 14px;
+
+    padding: 15px;
+
+    margin-bottom: 9px;
+
+    border:
+        1px solid var(--border);
+
+    border-radius: 11px;
+
+    background:
+        rgba(255,255,255,.018);
+
+    cursor: pointer;
+
+    transition:
+        background .15s,
+        border-color .15s,
+        transform .15s;
+}
+
+
+.level-option:hover {
+
+    background:
+        rgba(255,255,255,.05);
+
+    transform:
+        translateX(2px);
+}
+
+
+.level-option.selected {
+
+    border-color:
+        rgba(255,255,255,.55);
+
+    background:
+        rgba(255,255,255,.07);
+}
+
+
+.level-radio {
+
+    width: 17px;
+    height: 17px;
+
+    flex-shrink: 0;
+
+    border:
+        1px solid #555d6d;
+
+    border-radius: 50%;
+}
+
+
+.level-option.selected
+.level-radio {
+
+    background: white;
+
+    border-color: white;
+
+    box-shadow:
+        inset 0 0 0 4px
+        #171a23;
+}
+
+
+.level-option-title {
+
+    font-size: 14px;
+
+    font-weight: 700;
+}
+
+
+.level-option-file {
+
+    margin-top: 4px;
+
+    color: var(--muted2);
+
+    font-size: 10px;
+}
+
+
+/* =========================================================
+   BUTTONS
+   ========================================================= */
+
+.primary-button,
+.secondary-button,
+.control-button {
+
+    min-height: 44px;
+
+    padding:
+        0 17px;
+
+    border-radius: 10px;
+
+    font-weight: 700;
+
+    cursor: pointer;
+
+    transition:
+        transform .15s,
+        background .15s,
+        border-color .15s;
+}
+
+
+.primary-button {
+
+    width: 100%;
+
+    border:
+        1px solid white;
+
+    background:
+        white;
+
+    color: #07080b;
+}
+
+
+.primary-button:hover {
+
+    transform:
+        translateY(-2px);
+
+    background:
+        #e9edf2;
+}
+
+
+.secondary-button {
+
+    width: 100%;
+
+    margin-top: 10px;
+
+    border:
+        1px solid var(--border-light);
+
+    background:
+        rgba(255,255,255,.03);
+
+    color: white;
+}
+
+
+.secondary-button:hover {
+
+    background:
+        rgba(255,255,255,.08);
+}
+
+
+/* =========================================================
+   PLAYER
+   ========================================================= */
+
+.player-screen {
+
+    overflow-y: auto;
+
+    padding:
+        100px 30px 40px;
+}
+
+
+.level-header {
+
+    width:
+        min(1200px, 100%);
+
+    margin:
+        0 auto 18px;
+
+    display: flex;
+
+    align-items: center;
+
+    justify-content: space-between;
+
+    gap: 20px;
+}
+
+
+.level-header .secondary-button {
+
+    width: auto;
+
+    margin: 0;
+}
+
+
+.level-header h2 {
+
+    margin:
+        7px 0 10px;
+
+    font-size: 28px;
+
+    letter-spacing: -.8px;
+}
+
+
+.metadata {
+
+    display: flex;
+
+    flex-wrap: wrap;
+
+    gap: 14px;
+
+    color: var(--muted);
+
+    font-size: 10px;
+}
+
+
+/* =========================================================
+   GAME
+   ========================================================= */
+
+.game-container {
+
+    position: relative;
+
+    width:
+        min(1200px, 100%);
+
+    height:
+        min(62vh, 650px);
+
+    min-height: 420px;
+
+    margin:
+        0 auto;
+
+    overflow: hidden;
+
+    border:
+        1px solid var(--border-light);
+
+    border-radius: 18px;
+
+    background:
+        #08090d;
+
+    box-shadow:
+        0 25px 80px
+        rgba(0,0,0,.45),
+
+        inset 0 0 100px
+        rgba(0,0,0,.6);
+}
+
+
+#gameCanvas {
+
+    position: absolute;
+
+    inset: 0;
+
+    width: 100%;
+    height: 100%;
+
+    display: block;
+}
+
+
+/* =========================================================
+   FLASH
+   ========================================================= */
+
+.flash-overlay {
+
+    position: absolute;
+
+    inset: 0;
+
+    z-index: 5;
+
+    pointer-events: none;
+
+    opacity: 0;
+
+    background: white;
+
+    mix-blend-mode: screen;
+}
+
+
+/* =========================================================
+   GAME INFO
+   ========================================================= */
+
+.game-info {
+
+    position: absolute;
+
+    top: 17px;
+    left: 20px;
+
+    z-index: 10;
+
+    pointer-events: none;
+}
+
+
+#currentTile {
+
+    color: white;
+
+    font-size: 12px;
+
+    font-weight: 800;
+}
+
+
+#currentTime {
+
+    margin-top: 4px;
+
+    color: var(--muted);
+
+    font-size: 10px;
 }
 
 
 /* =========================================================
    BEAT
-========================================================= */
+   ========================================================= */
 
-function updateBeat() {
+.beat-container {
 
-    const beatDuration =
-        60 / bpm;
+    position: absolute;
 
+    top: 20px;
+    right: 20px;
 
-    const beatIndex =
-        Math.floor(
-            currentTimeSeconds /
-            beatDuration
-        );
+    z-index: 10;
+}
 
 
-    if (
-        beatIndex !==
-        lastBeatIndex
-    ) {
+.beat-circle {
 
-        lastBeatIndex =
-            beatIndex;
+    width: 13px;
+    height: 13px;
 
+    border-radius: 50%;
 
-        beatCircle.classList.remove(
-            "beat"
-        );
+    background: white;
 
+    opacity: .25;
 
-        void beatCircle.offsetWidth;
+    transition:
+        transform .08s,
+        opacity .08s,
 
-
-        beatCircle.classList.add(
-            "beat"
-        );
+        box-shadow .08s;
+}
 
 
-        setTimeout(
-            () => {
+.beat-circle.beat {
 
-                beatCircle.classList.remove(
-                    "beat"
-                );
+    transform:
+        scale(2.2);
 
-            },
-            100
-        );
-    }
+    opacity: 1;
+
+    box-shadow:
+        0 0 25px
+        rgba(255,255,255,.8);
 }
 
 
 /* =========================================================
-   UI
-========================================================= */
+   GAME MESSAGE
+   ========================================================= */
 
-function updateUI() {
+.game-message {
 
-    currentTile.textContent =
-        "Tile " +
-        (currentTileIndex + 1) +
-        " / " +
-        tiles.length;
+    position: absolute;
 
+    inset: 0;
 
-    currentTime.textContent =
-        formatTimeDetailed(
-            currentTimeSeconds
-        );
+    z-index: 4;
 
+    display: flex;
 
-    timeCurrent.textContent =
-        formatTime(
-            currentTimeSeconds
-        );
+    align-items: center;
 
+    justify-content: center;
 
-    timeTotal.textContent =
-        formatTime(
-            totalDuration
-        );
+    color: #5e6573;
+
+    font-size: 13px;
+
+    pointer-events: none;
+}
 
 
-    if (
-        totalDuration > 0
-    ) {
+/* =========================================================
+   CONTROLS
+   ========================================================= */
 
-        timeline.value =
-            (
-                currentTimeSeconds /
-                totalDuration
-            ) * 100;
+.controls {
 
-    } else {
+    width:
+        min(700px, 100%);
 
-        timeline.value = 0;
-    }
+    margin:
+        18px auto;
+
+    display: flex;
+
+    justify-content: center;
+
+    gap: 8px;
+}
 
 
-    if (playing) {
+.control-button {
 
-        playButton.innerHTML =
-            "▶ <span>Playing</span>";
+    min-width: 110px;
 
-    } else {
+    display: flex;
 
-        playButton.innerHTML =
-            "▶ <span>Play</span>";
-    }
+    align-items: center;
+
+    justify-content: center;
+
+    gap: 8px;
+
+    border:
+        1px solid var(--border);
+
+    background:
+        var(--panel-solid);
+
+    color: white;
+}
+
+
+.control-button:hover {
+
+    background:
+        var(--panel-light);
+
+    transform:
+        translateY(-2px);
+}
+
+
+.play-button {
+
+    width: 150px;
 }
 
 
 /* =========================================================
    TIMELINE
-========================================================= */
+   ========================================================= */
 
-timeline.addEventListener(
-    "input",
-    () => {
+.timeline {
 
-        if (
-            !totalDuration
-        ) {
+    width:
+        min(900px, 100%);
 
-            return;
-        }
+    margin:
+        0 auto;
 
+    display: flex;
 
-        const percentage =
-            Number(
-                timeline.value
-            ) / 100;
+    align-items: center;
 
+    gap: 12px;
 
-        currentTimeSeconds =
-            percentage *
-            totalDuration;
+    color: var(--muted);
+
+    font-size: 10px;
+}
 
 
-        if (
-            audioPlayer.src
-        ) {
+.timeline input {
 
-            try {
+    flex: 1;
 
-                audioPlayer.currentTime =
-                    currentTimeSeconds;
+    accent-color: white;
 
-            } catch (error) {
-
-                console.warn(error);
-            }
-        }
-
-
-        updateCurrentTile();
-
-        updateUI();
-
-        draw();
-    }
-);
+    cursor: pointer;
+}
 
 
 /* =========================================================
-   SPEED
-========================================================= */
+   SETTINGS
+   ========================================================= */
 
-speedSlider.addEventListener(
-    "input",
-    () => {
+.settings {
 
-        playbackSpeed =
-            Number(
-                speedSlider.value
-            );
+    width:
+        min(500px, 100%);
 
+    margin:
+        25px auto 0;
 
-        speedValue.textContent =
-            playbackSpeed.toFixed(2) +
-            "×";
+    padding:
+        16px 18px;
 
+    border:
+        1px solid var(--border);
 
-        if (
-            audioPlayer.src
-        ) {
+    border-radius: 12px;
 
-            audioPlayer.playbackRate =
-                playbackSpeed;
-        }
-    }
-);
+    background:
+        rgba(13,15,21,.75);
+}
 
 
-/* =========================================================
-   BUTTONS
-========================================================= */
+.setting-title {
 
-playButton.addEventListener(
-    "click",
-    play
-);
+    margin-bottom: 9px;
 
+    color: var(--muted);
 
-pauseButton.addEventListener(
-    "click",
-    pause
-);
+    font-size: 9px;
+
+    letter-spacing: 2px;
+
+    font-weight: 700;
+}
 
 
-restartButton.addEventListener(
-    "click",
-    restart
-);
+.speed-row {
+
+    display: flex;
+
+    align-items: center;
+
+    gap: 15px;
+}
 
 
-/* =========================================================
-   LOAD ANOTHER
-========================================================= */
+.speed-row input {
 
-newLevelButton.addEventListener(
-    "click",
-    () => {
+    flex: 1;
 
-        pause();
-
-        stopAudio();
+    accent-color: white;
+}
 
 
-        level = null;
+.speed-row strong {
 
-        tiles = [];
+    min-width: 45px;
 
-        zipFiles = {};
+    text-align: right;
 
-        availableLevels = [];
-
-
-        playerScreen.classList.add(
-            "hidden"
-        );
-
-        levelSelectScreen.classList.add(
-            "hidden"
-        );
-
-        uploadScreen.classList.remove(
-            "hidden"
-        );
-
-
-        fileInput.value = "";
-
-
-        statusDot.classList.remove(
-            "ready"
-        );
-
-
-        statusText.textContent =
-            "No level loaded";
-    }
-);
-
-
-backToUploadButton.addEventListener(
-    "click",
-    () => {
-
-        levelSelectScreen.classList.add(
-            "hidden"
-        );
-
-        uploadScreen.classList.remove(
-            "hidden"
-        );
-
-
-        fileInput.value = "";
-
-
-        statusDot.classList.remove(
-            "ready"
-        );
-
-
-        statusText.textContent =
-            "No level loaded";
-    }
-);
+    font-size: 11px;
+}
 
 
 /* =========================================================
    KEYBOARD
-========================================================= */
+   ========================================================= */
 
-document.addEventListener(
-    "keydown",
-    event => {
+.keyboard-help {
 
-        if (
-            event.target.tagName ===
-            "INPUT"
-        ) {
+    display: flex;
 
-            return;
-        }
+    justify-content: center;
 
+    gap: 18px;
 
-        if (
-            event.code ===
-            "Space"
-        ) {
+    margin-top: 18px;
 
-            event.preventDefault();
+    color: #606777;
 
-
-            if (playing) {
-
-                pause();
-
-            } else {
-
-                play();
-            }
-        }
-
-
-        if (
-            event.key.toLowerCase() ===
-            "r"
-        ) {
-
-            restart();
-        }
-    }
-);
-
-
-/* =========================================================
-   CANVAS RESIZE
-========================================================= */
-
-function resizeCanvas() {
-
-    const rect =
-        canvas.getBoundingClientRect();
-
-
-    const dpr =
-        window.devicePixelRatio ||
-        1;
-
-
-    canvas.width =
-        Math.floor(
-            rect.width * dpr
-        );
-
-
-    canvas.height =
-        Math.floor(
-            rect.height * dpr
-        );
-
-
-    ctx.setTransform(
-        dpr,
-        0,
-        0,
-        dpr,
-        0,
-        0
-    );
-
-
-    draw();
+    font-size: 10px;
 }
 
 
-window.addEventListener(
-    "resize",
-    resizeCanvas
-);
+kbd {
 
+    padding:
+        3px 6px;
 
-/* =========================================================
-   DRAW
-========================================================= */
+    border:
+        1px solid #303540;
 
-function draw() {
+    border-radius: 4px;
 
-    const width =
-        canvas.clientWidth;
+    background:
+        #151821;
 
-    const height =
-        canvas.clientHeight;
+    color: #9da4b2;
 
-
-    ctx.clearRect(
-        0,
-        0,
-        width,
-        height
-    );
-
-
-    drawGrid(
-        width,
-        height
-    );
-
-
-    if (!tiles.length) {
-        return;
-    }
-
-
-    /*
-        Bounds.
-    */
-
-    let minX = Infinity;
-
-    let maxX = -Infinity;
-
-    let minY = Infinity;
-
-    let maxY = -Infinity;
-
-
-    for (
-        const tile of tiles
-    ) {
-
-        minX =
-            Math.min(
-                minX,
-                tile.x
-            );
-
-        maxX =
-            Math.max(
-                maxX,
-                tile.x
-            );
-
-        minY =
-            Math.min(
-                minY,
-                tile.y
-            );
-
-        maxY =
-            Math.max(
-                maxY,
-                tile.y
-            );
-    }
-
-
-    const pathWidth =
-        Math.max(
-            maxX - minX,
-            1
-        );
-
-
-    const pathHeight =
-        Math.max(
-            maxY - minY,
-            1
-        );
-
-
-    const padding = 80;
-
-
-    const scale =
-        Math.min(
-
-            (width - padding * 2) /
-            pathWidth,
-
-            (height - padding * 2) /
-            pathHeight
-
-        );
-
-
-    const centerX =
-        width / 2;
-
-
-    const centerY =
-        height / 2;
-
-
-    function screenX(x) {
-
-        return (
-            centerX +
-            x * scale
-        );
-    }
-
-
-    function screenY(y) {
-
-        return (
-            centerY +
-            y * scale
-        );
-    }
-
-
-    /*
-        Draw path.
-    */
-
-    ctx.beginPath();
-
-
-    for (
-        let i = 0;
-        i < tiles.length;
-        i++
-    ) {
-
-        const tile =
-            tiles[i];
-
-
-        const x =
-            screenX(tile.x);
-
-
-        const y =
-            screenY(tile.y);
-
-
-        if (i === 0) {
-
-            ctx.moveTo(
-                x,
-                y
-            );
-
-        } else {
-
-            ctx.lineTo(
-                x,
-                y
-            );
-        }
-    }
-
-
-    ctx.strokeStyle =
-        "rgba(255,255,255,.13)";
-
-    ctx.lineWidth = 2;
-
-    ctx.stroke();
-
-
-    /*
-        Draw tiles.
-    */
-
-    for (
-        let i = 0;
-        i < tiles.length;
-        i++
-    ) {
-
-        const tile =
-            tiles[i];
-
-
-        const x =
-            screenX(tile.x);
-
-
-        const y =
-            screenY(tile.y);
-
-
-        const current =
-            i === currentTileIndex;
-
-
-        const passed =
-            i < currentTileIndex;
-
-
-        /*
-            Current tile glow.
-        */
-
-        if (current) {
-
-            ctx.beginPath();
-
-            ctx.arc(
-                x,
-                y,
-                20,
-                0,
-                Math.PI * 2
-            );
-
-            ctx.fillStyle =
-                "rgba(255,255,255,.09)";
-
-            ctx.fill();
-
-
-            ctx.beginPath();
-
-            ctx.arc(
-                x,
-                y,
-                13 +
-                Math.sin(
-                    performance.now() /
-                    120
-                ) * 3,
-                0,
-                Math.PI * 2
-            );
-
-            ctx.strokeStyle =
-                "rgba(255,255,255,.7)";
-
-            ctx.lineWidth = 1.5;
-
-            ctx.stroke();
-        }
-
-
-        /*
-            Tile.
-        */
-
-        ctx.beginPath();
-
-        ctx.arc(
-            x,
-            y,
-            current ? 8 : 5,
-            0,
-            Math.PI * 2
-        );
-
-
-        if (current) {
-
-            ctx.fillStyle =
-                "white";
-
-        } else if (passed) {
-
-            ctx.fillStyle =
-                "rgba(255,255,255,.35)";
-
-        } else {
-
-            ctx.fillStyle =
-                "rgba(255,255,255,.72)";
-        }
-
-
-        ctx.fill();
-
-
-        /*
-            Numbers only for reasonably
-            sized levels.
-        */
-
-        if (
-            tiles.length <= 250
-        ) {
-
-            ctx.font =
-                "9px system-ui";
-
-            ctx.textAlign =
-                "center";
-
-            ctx.fillStyle =
-                "rgba(255,255,255,.3)";
-
-            ctx.fillText(
-                String(i + 1),
-                x,
-                y - 11
-            );
-        }
-    }
+    font-size: 8px;
 }
 
 
 /* =========================================================
-   GRID
-========================================================= */
+   MOBILE
+   ========================================================= */
 
-function drawGrid(
-    width,
-    height
-) {
+@media (max-width: 700px) {
 
-    const size = 40;
+    .topbar {
 
+        height: 62px;
 
-    ctx.save();
-
-
-    ctx.strokeStyle =
-        "rgba(255,255,255,.025)";
-
-    ctx.lineWidth = 1;
-
-
-    for (
-        let x = 0;
-        x < width;
-        x += size
-    ) {
-
-        ctx.beginPath();
-
-        ctx.moveTo(
-            x,
-            0
-        );
-
-        ctx.lineTo(
-            x,
-            height
-        );
-
-        ctx.stroke();
+        padding:
+            0 15px;
     }
 
 
-    for (
-        let y = 0;
-        y < height;
-        y += size
-    ) {
+    .connection-status {
 
-        ctx.beginPath();
-
-        ctx.moveTo(
-            0,
-            y
-        );
-
-        ctx.lineTo(
-            width,
-            y
-        );
-
-        ctx.stroke();
+        display: none;
     }
 
 
-    ctx.restore();
-}
+    .upload-card {
 
-
-/* =========================================================
-   AUDIO STOP
-========================================================= */
-
-function stopAudio() {
-
-    try {
-
-        audioPlayer.pause();
-
-        audioPlayer.currentTime = 0;
-
-    } catch (error) {
-
-        console.warn(error);
+        padding:
+            35px 22px;
     }
 
 
-    if (audioUrl) {
+    .upload-card h1 {
 
-        URL.revokeObjectURL(
-            audioUrl
-        );
-
-        audioUrl = null;
+        font-size: 32px;
     }
 
 
-    audioPlayer.removeAttribute(
-        "src"
-    );
+    .player-screen {
 
-    audioPlayer.load();
-
-
-    audioLabel.textContent =
-        "Audio: --";
-}
-
-
-/* =========================================================
-   HELPERS
-========================================================= */
-
-function isAudioFile(
-    filename
-) {
-
-    const name =
-        filename.toLowerCase();
-
-
-    return (
-        name.endsWith(".ogg") ||
-        name.endsWith(".mp3") ||
-        name.endsWith(".wav") ||
-        name.endsWith(".m4a") ||
-        name.endsWith(".aac") ||
-        name.endsWith(".flac")
-    );
-}
-
-
-function getFilename(
-    path
-) {
-
-    return path
-        .replace(/\\/g, "/")
-        .split("/")
-        .pop() || "";
-}
-
-
-function getFolder(
-    path
-) {
-
-    const normalized =
-        path.replace(
-            /\\/g,
-            "/"
-        );
-
-
-    const index =
-        normalized.lastIndexOf(
-            "/"
-        );
-
-
-    if (index === -1) {
-        return "";
+        padding:
+            82px 12px 30px;
     }
 
 
-    return normalized.substring(
-        0,
-        index
-    );
-}
+    .level-header {
 
+        align-items:
+            flex-start;
 
-function normalizePath(
-    path
-) {
-
-    return path
-        .replace(
-            /\\/g,
-            "/"
-        )
-        .replace(
-            /^\.?\//,
-            ""
-        )
-        .toLowerCase();
-}
-
-
-function normalizeAngle(
-    angle
-) {
-
-    angle %= 360;
-
-
-    if (angle < 0) {
-        angle += 360;
+        flex-direction:
+            column;
     }
 
 
-    return angle;
-}
+    .level-header h2 {
 
-
-function formatNumber(
-    number
-) {
-
-    return Number(number)
-        .toFixed(2)
-        .replace(
-            /\.00$/,
-            ""
-        );
-}
-
-
-function formatTime(
-    seconds
-) {
-
-    if (
-        !Number.isFinite(seconds) ||
-        seconds < 0
-    ) {
-
-        seconds = 0;
+        font-size: 22px;
     }
 
 
-    const minutes =
-        Math.floor(
-            seconds / 60
-        );
+    .level-header .secondary-button {
 
-
-    const secs =
-        Math.floor(
-            seconds % 60
-        );
-
-
-    return (
-        minutes +
-        ":" +
-        String(secs)
-            .padStart(
-                2,
-                "0"
-            )
-    );
-}
-
-
-function formatTimeDetailed(
-    seconds
-) {
-
-    if (
-        !Number.isFinite(seconds) ||
-        seconds < 0
-    ) {
-
-        seconds = 0;
+        width: 100%;
     }
 
 
-    const minutes =
-        Math.floor(
-            seconds / 60
-        );
+    .game-container {
+
+        height: 55vh;
+
+        min-height: 330px;
+    }
 
 
-    const secs =
-        Math.floor(
-            seconds % 60
-        );
+    .controls {
+
+        gap: 5px;
+    }
 
 
-    const milliseconds =
-        Math.floor(
-            (seconds % 1) *
-            1000
-        );
+    .control-button {
+
+        min-width: 70px;
+    }
 
 
-    return (
-        minutes +
-        ":" +
-        String(secs)
-            .padStart(
-                2,
-                "0"
-            ) +
-        "." +
-        String(milliseconds)
-            .padStart(
-                3,
-                "0"
-            )
-    );
+    .play-button {
+
+        width: 100px;
+    }
+
+
+    .controls span {
+
+        display: none;
+    }
+
+
+    .keyboard-help {
+
+        display: none;
+    }
+
 }
-
-
-function escapeHtml(
-    value
-) {
-
-    return String(value)
-        .replace(
-            /&/g,
-            "&amp;"
-        )
-        .replace(
-            /</g,
-            "&lt;"
-        )
-        .replace(
-            />/g,
-            "&gt;"
-        )
-        .replace(
-            /"/g,
-            "&quot;"
-        )
-        .replace(
-            /'/g,
-            "&#039;"
-        );
-}
-
-
-/* =========================================================
-   INITIALIZE
-========================================================= */
-
-resizeCanvas();
