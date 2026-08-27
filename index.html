@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ADOFAI Web Player</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+<header class="topbar">
+    <div class="logo">
+        <div class="logo-orbit"></div>
+        <div>
+            <strong>ADOFAI</strong>
+            <span>WEB PLAYER</span>
+        </div>
+    </div>
+
+    <div class="status">
+        <span id="statusDot"></span>
+        <span id="statusText">No level loaded</span>
+    </div>
+</header>
+
+<main>
+
+    <section id="uploadScreen" class="upload-screen">
+
+        <div class="upload-card">
+
+            <div class="upload-icon">+</div>
+
+            <h1>Load an ADOFAI Level</h1>
+
+            <p>
+                Upload a <strong>.adofai</strong> file to
+                visualize and play the level in your browser.
+            </p>
+
+            <label class="upload-button">
+                Choose Level
+                <input
+                    id="fileInput"
+                    type="file"
+                    accept=".adofai,application/json"
+                    hidden
+                >
+            </label>
+
+            <div id="dropZone" class="drop-zone">
+                Or drag & drop your <code>.adofai</code> file here
+            </div>
+
+            <p class="privacy">
+                Your file is processed locally in your browser.
+            </p>
+
+        </div>
+
+    </section>
+
+
+    <section id="playerScreen" class="player-screen hidden">
+
+        <div class="level-header">
+
+            <div>
+                <div class="eyebrow">CURRENT LEVEL</div>
+
+                <h1 id="levelName">
+                    Untitled Level
+                </h1>
+
+                <div class="metadata">
+                    <span id="bpmLabel">BPM: --</span>
+                    <span id="tileLabel">Tiles: --</span>
+                    <span id="offsetLabel">Offset: --</span>
+                </div>
+            </div>
+
+            <button id="newLevelButton" class="secondary-button">
+                Load Another
+            </button>
+
+        </div>
+
+
+        <div class="game-container">
+
+            <canvas id="gameCanvas"></canvas>
+
+            <div id="countdown" class="countdown hidden">
+                3
+            </div>
+
+            <div class="game-overlay">
+
+                <div class="current-info">
+                    <span id="currentTile">Tile 0</span>
+                    <span id="currentTime">0:00.000</span>
+                </div>
+
+                <div class="beat-indicator">
+                    <div id="beatCircle"></div>
+                </div>
+
+            </div>
+
+        </div>
+
+
+        <div class="controls">
+
+            <button id="restartButton" class="control-button">
+                ↻
+                <span>Restart</span>
+            </button>
+
+            <button id="playButton" class="play-button">
+                ▶
+                <span>Play</span>
+            </button>
+
+            <button id="pauseButton" class="control-button">
+                ❚❚
+                <span>Pause</span>
+            </button>
+
+        </div>
+
+
+        <div class="timeline-container">
+
+            <span id="timeCurrent">0:00</span>
+
+            <input
+                id="timeline"
+                type="range"
+                min="0"
+                max="100"
+                value="0"
+                step="0.01"
+            >
+
+            <span id="timeTotal">0:00</span>
+
+        </div>
+
+
+        <div class="settings-panel">
+
+            <div class="setting">
+
+                <label for="speedSlider">
+                    Playback Speed
+                </label>
+
+                <div class="speed-row">
+
+                    <input
+                        id="speedSlider"
+                        type="range"
+                        min="0.25"
+                        max="2"
+                        value="1"
+                        step="0.05"
+                    >
+
+                    <strong id="speedValue">
+                        1.00×
+                    </strong>
+
+                </div>
+
+            </div>
+
+        </div>
+
+
+        <div class="keyboard-help">
+            <span><kbd>SPACE</kbd> Play / Pause</span>
+            <span><kbd>R</kbd> Restart</span>
+        </div>
+
+    </section>
+
+</main>
+
+<script src="app.js"></script>
+
+</body>
+</html>
